@@ -1,0 +1,26 @@
+screen.LIGHTING = Lighting
+screen.REFLECTIONS = Reflections
+screen.WATER = Water
+screen.SKY = Sky
+
+
+option.SHADOW_MAP_RESOLUTION = Shadow Map Resolution
+option.SHADOW_SAMPLES = Shadow Samples
+option.SHADOW_PIXELS_PER_BLOCK = Pixels Per Block
+
+
+option.VANILLA_CLOUDS = Vanilla Clouds
+option.VANILLA_SUN = Vanilla Sun
+option.VANILLA_MOON = Vanilla Moon
+option.VANILLA_STARS = Vanilla Stars
+
+value.VANILLA_CLOUDS.0 = Off
+value.VANILLA_CLOUDS.1 = Fast
+value.VANILLA_CLOUDS.2 = Fancy
+
+
+option.SSR_STEPS = SSR Steps
+option.SSR_REFINE_STEPS = SSR Refine Steps
+
+
+option.WATER_PIXELATED = Pixelated Water
