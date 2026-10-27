@@ -5,6 +5,7 @@
 const float PI = 3.14159265359;
 const float TAU = 6.28318530718;
 const float INV_PI = 0.31830988618;
+const float TWO_INV_PI = 0.636619772;
 
 
 struct Atmosphere {

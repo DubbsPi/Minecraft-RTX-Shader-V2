@@ -119,9 +119,46 @@ const vec3 CELESTIAL_AXIS = normalize(vec3(0, sin(radians(SUN_PATH_ROTATION)), c
 //#define WATER_PIXELATED
 #define WAVE_HEIGHT 0.15
 #define WAVE_DETAIL 0.1
-#define WATER_DENSITY 0.35
-#define WATER_ROUGHNESS 0.05
+#define WATER_DENSITY 0.15
+#define WATER_ROUGHNESS 0.02
 #define WATER_IOR 1.33
+
+// Spectrum
+const int WATER_SWELL_WAVES = 6;
+const int WATER_DETAIL_WAVES = 6;
+const int WATER_TOTAL_WAVES = WATER_SWELL_WAVES + WATER_DETAIL_WAVES;
+
+const float WATER_WAVE_LENGTH_0 = 18.0;
+const float WATER_WAVE_LENGTH_RATIO = 0.78;
+
+const float WATER_SWELL_AMP_0 = 0.36;
+const float WATER_SWELL_AMP_RATIO = 0.70;
+const float WATER_DETAIL_AMP_0 = 0.45;
+const float WATER_DETAIL_AMP_RATIO = 0.72;
+
+const float WATER_STEEPNESS = 0.7;
+
+// Wind
+const float WATER_WIND_ANGLE = 0.9;
+const float WATER_SWELL_SPREAD = 1.6;
+const float WATER_TIME_SCALE = 0.25;
+const float WATER_GRAVITY = 9.81;
+
+// Gust patches
+const float WATER_SWELL_GUST  = 0.35;
+const float WATER_DETAIL_GUST = 0.8;
+
+// Coarse domain warp
+const float WATER_COARSE_SCALE = 0.045;
+const float WATER_COARSE_STRENGTH = 2.6;
+const float WATER_COARSE_ROTATION = 0.6;
+const vec2 WATER_COARSE_SCROLL = vec2(0.012, -0.017);
+
+// Fine domain warp
+const float WATER_FINE_SCALE = 0.7;
+const float WATER_FINE_STRENGTH = 0.22;
+const float WATER_FINE_ROTATION = 1.1;
+const vec2 WATER_FINE_SCROLL = vec2(0.22, -0.30);
 
 
 #endif

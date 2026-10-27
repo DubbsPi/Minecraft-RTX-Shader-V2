@@ -8,89 +8,43 @@
 uniform sampler2D noisetex;
 
 
-const float WATER_WARP_SCALE = 0.65;
-const float WATER_WARP_STRENGTH = 0.37;
-const vec2 WATER_NOISE_SCROLL = vec2(0.33, -0.59);
 
-
-struct GerstnerWave {
-    vec2 direction;
-    float wavelength;
-    float amplitude;
-    float steepness;
-    float speed;
+struct WaterWave {
+    vec2 dir;
+    float k;
+    float omega;
+    float amp;
     float phase;
+    float q;
 };
 
-const GerstnerWave WATER_WAVES[5] = GerstnerWave[5](
-    GerstnerWave(
-        vec2(0.41, 0.73),
-        14.0, 0.34,
-        0.72, 0.62, 0.4
-    ),
+WaterWave getWaterWave(int i) {
+    WaterWave w;
+    float fi = float(i);
+    float u = fi / float(WATER_TOTAL_WAVES - 1);
 
-    GerstnerWave(
-        vec2(-0.36, 0.93),
-        9.3, 0.25,
-        0.65, 0.8, 2.1
-    ),
+    float spread = mix(WATER_SWELL_SPREAD, TAU, u * u);
+    float angle = WATER_WIND_ANGLE + (fract(fi * TWO_INV_PI + 0.13) - 0.5) * spread;
+    w.dir = vec2(cos(angle), sin(angle));
 
-    GerstnerWave(
-        vec2(0.27, -0.96),
-        6.8, 0.18,
-        0.56, 0.73, 4.4
-    ),
+    float wavelength = WATER_WAVE_LENGTH_0 * pow(WATER_WAVE_LENGTH_RATIO, fi);
+    w.k = TAU / wavelength;
+    w.omega = sqrt(WATER_GRAVITY * w.k) * WATER_TIME_SCALE;
+    w.phase = TAU * fract(fi * 0.7548 + 0.41);
 
-    GerstnerWave(
-        vec2(0.47, 0.57),
-        5.0, 0.125,
-        0.45, 0.52, 1.3
-    ),
+    w.q = 0.0;
+    if (i < WATER_SWELL_WAVES) {
+        w.amp = WATER_SWELL_AMP_0 * pow(WATER_SWELL_AMP_RATIO, fi);
+        w.q = WATER_STEEPNESS / (float(WATER_SWELL_WAVES) * w.k * w.amp);
+    } else {
+        w.amp = WATER_DETAIL_AMP_0 * pow(WATER_DETAIL_AMP_RATIO, fi - float(WATER_SWELL_WAVES));
+    }
 
-    GerstnerWave(
-        vec2(-0.73, -0.68),
-        4.0, 0.075,
-        0.35, 0.98, 3.5
-    )
-);
+    return w;
+}
 
 
-struct WaterDetailWave {
-    vec2 direction;
-    float wavelength;
-    float amplitude;
-    float speed;
-    float phase;
-};
-
-const WaterDetailWave WATER_DETAIL_WAVES[4] = WaterDetailWave[4](
-    WaterDetailWave(
-        vec2(0.93, -0.36),
-        3.2, 0.34,
-        0.67, 0.8
-    ),
-
-    WaterDetailWave(
-        vec2(-0.56, -0.83),
-        2.45, 0.22,
-        0.55, 4.0
-    ),
-
-    WaterDetailWave(
-        vec2(0.31, 0.95),
-        1.85, 0.14,
-        0.48, 2.7
-    ),
-
-    WaterDetailWave(
-        vec2(-0.92, 0.39),
-        1.42, 0.075,
-        0.40, 5.2
-    )
-);
-
-
-vec2 waterNoiseCell(in ivec2 cell) {
+vec3 waterNoiseCell(in ivec2 cell) {
     ivec2 size = textureSize(noisetex, 0);
 
     ivec2 wrapped = ivec2(
@@ -98,135 +52,149 @@ vec2 waterNoiseCell(in ivec2 cell) {
         ((cell.y % size.y) + size.y) % size.y
     );
 
-    return texelFetch(noisetex, wrapped, 0).rg * 2.0 - 1.0;
+    return texelFetch(noisetex, wrapped, 0).rgb * 2.0 - 1.0;
 }
 
+void sampleWaterNoise(
+    in vec2 p, in float t,
+    in float scale, in float angle, in vec2 scroll,
+    out vec3 value, out vec2 dx, out vec2 dz
+ ) {
+    float c = cos(angle);
+    float s = sin(angle);
+    mat2 M = scale * mat2(c, s, -s, c);
 
-void sampleWaterNoise(in vec2 p, in float t, out vec2 noiseValue, out vec2 noiseDx, out vec2 noiseDz) {
-    vec2 q = p * WATER_WARP_SCALE + WATER_NOISE_SCROLL * t;
+    vec2 q = M * p + scroll * t;
 
     ivec2 cell = ivec2(floor(q));
     vec2 f = fract(q);
     vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
     vec2 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
 
-    vec2 n00 = waterNoiseCell(cell);
-    vec2 n10 = waterNoiseCell(cell + ivec2(1, 0));
-    vec2 n01 = waterNoiseCell(cell + ivec2(0, 1));
-    vec2 n11 = waterNoiseCell(cell + ivec2(1, 1));
+    vec3 n00 = waterNoiseCell(cell);
+    vec3 n10 = waterNoiseCell(cell + ivec2(1, 0));
+    vec3 n01 = waterNoiseCell(cell + ivec2(0, 1));
+    vec3 n11 = waterNoiseCell(cell + ivec2(1, 1));
 
-    vec2 row0 = mix(n00, n10, u.x);
-    vec2 row1 = mix(n01, n11, u.x);
+    vec3 row0 = mix(n00, n10, u.x);
+    vec3 row1 = mix(n01, n11, u.x);
+    value = mix(row0, row1, u.y);
 
-    noiseValue = mix(row0, row1, u.y);
+    vec2 dQx = mix(n10 - n00, n11 - n01, u.y).xy * du.x;
+    vec2 dQz = (row1 - row0).xy * du.y;
 
-    vec2 dNoiseQx = mix(n10 - n00, n11 - n01, u.y) * du.x;
-    vec2 dNoiseQz = (row1 - row0) * du.y;
-
-    noiseDx = dNoiseQx * WATER_WARP_SCALE;
-    noiseDz = dNoiseQz * WATER_WARP_SCALE;
+    // Chain rule (learned this in calc fairly recently)
+    dx = dQx * M[0].x + dQz * M[0].y;
+    dz = dQx * M[1].x + dQz * M[1].y;
 }
 
 
-void waterWarp(in vec2 p, in float t, out vec2 warpedP, out vec2 warpDx, out vec2 warpDz) {
-    vec2 noiseValue;
-    vec2 noiseDx;
-    vec2 noiseDz;
-    sampleWaterNoise(p, t, noiseValue, noiseDx, noiseDz);
+struct WaterWarp {
+    vec2 p;
+    vec2 dx;
+    vec2 dz;
+    float gust;
+};
 
-    warpedP = p + noiseValue * WATER_WARP_STRENGTH;
-    warpDx = vec2(1, 0) + noiseDx * WATER_WARP_STRENGTH;
-    warpDz = vec2(0, 1) + noiseDz * WATER_WARP_STRENGTH;
+WaterWarp waterWarpCoarse(in vec2 p, in float t) {
+    vec3 n;
+    vec2 nDx;
+    vec2 nDz;
+    sampleWaterNoise(p, t, WATER_COARSE_SCALE, WATER_COARSE_ROTATION, WATER_COARSE_SCROLL, n, nDx, nDz);
+
+    WaterWarp w;
+    w.p    = p + n.xy * WATER_COARSE_STRENGTH;
+    w.dx   = vec2(1, 0) + nDx * WATER_COARSE_STRENGTH;
+    w.dz   = vec2(0, 1) + nDz * WATER_COARSE_STRENGTH;
+    w.gust = n.z;
+    return w;
+}
+
+WaterWarp waterWarpFine(in vec2 p, in float t, in WaterWarp base) {
+    vec3 n;
+    vec2 nDx;
+    vec2 nDz;
+    sampleWaterNoise(p, t, WATER_FINE_SCALE, WATER_FINE_ROTATION, WATER_FINE_SCROLL, n, nDx, nDz);
+
+    WaterWarp w = base;
+    w.p  += n.xy * WATER_FINE_STRENGTH;
+    w.dx += nDx * WATER_FINE_STRENGTH;
+    w.dz += nDz * WATER_FINE_STRENGTH;
+    return w;
 }
 
 
 vec3 evaluateWaterDisplacement(in vec2 p, in float t) {
-    vec2 warpedP;
-    vec2 warpDx;
-    vec2 warpDz;
-    waterWarp(p, t, warpedP, warpDx, warpDz);
+    WaterWarp warp = waterWarpCoarse(p, t);
+    float swellState = 1.0 + WATER_SWELL_GUST * warp.gust;
 
     vec3 displacement = vec3(0);
-    for (int i = 0; i < 5; ++i) {
-        GerstnerWave w = WATER_WAVES[i];
-        vec2 d = normalize(w.direction);
+    for (int i = 0; i < WATER_SWELL_WAVES; ++i) {
+        WaterWave w = getWaterWave(i);
 
-        float k = TAU / w.wavelength;
-        float omega = k * w.speed;
-
-        float A = WAVE_HEIGHT * w.amplitude;
-        float theta = k * dot(d, warpedP) - omega * t + w.phase;
+        float A = WAVE_HEIGHT * swellState * w.amp;
+        float theta = w.k * dot(w.dir, warp.p) - w.omega * t + w.phase;
 
         float s = sin(theta);
         float c = cos(theta);
 
-        float horizontal = w.steepness * A;
+        float horizontal = w.q * A;
 
-        displacement.x += horizontal * d.x * c;
+        displacement.x += horizontal * w.dir.x * c;
         displacement.y += A * s;
-        displacement.z += horizontal * d.y * c;
+        displacement.z += horizontal * w.dir.y * c;
     }
 
     return displacement;
 }
 
 
-
-void accumulateGerstnerDerivatives(in vec2 p, in float t, in GerstnerWave w, inout vec3 dPdx, inout vec3 dPdz) {
-    vec2 d = normalize(w.direction);
-
-    float k = TAU / w.wavelength;
-    float omega = k * w.speed;
-
-    float A = WAVE_HEIGHT * w.amplitude;
-    float theta = k * dot(d, p) - omega * t + w.phase;
+void accumulateSwellDerivatives(in WaterWave w, in vec2 p, in float t, in float swellState, inout vec3 dPdx, inout vec3 dPdz) {
+    float A = WAVE_HEIGHT * swellState * w.amp;
+    float theta = w.k * dot(w.dir, p) - w.omega * t + w.phase;
 
     float s = sin(theta);
     float c = cos(theta);
 
-    float qAk = w.steepness * A * k;
-    float Ak = A * k;
+    float qAk = w.q * A * w.k;
+    float Ak  = A * w.k;
 
-
-    dPdx += vec3(-qAk * d.x * d.x * s, Ak * d.x * c, -qAk * d.x * d.y * s);
-    dPdz += vec3(-qAk * d.x * d.y * s, Ak * d.y * c, -qAk * d.y * d.y * s);
+    dPdx += vec3(-qAk * w.dir.x * w.dir.x * s, Ak * w.dir.x * c, -qAk * w.dir.x * w.dir.y * s);
+    dPdz += vec3(-qAk * w.dir.x * w.dir.y * s, Ak * w.dir.y * c, -qAk * w.dir.y * w.dir.y * s);
 }
 
-void accumulateWaterDetail(in vec2 p, in float t, in WaterDetailWave w, inout vec2 gradient) {
-    vec2 d = normalize(w.direction);
 
-    float k = TAU / w.wavelength;
-    float omega = k * w.speed;
-    float A = WAVE_DETAIL * w.amplitude;
+void accumulateDetailGradient(in WaterWave w, in vec2 p, in float t, in float detailState, inout vec2 gradient) {
+    float A = WAVE_DETAIL * detailState * w.amp;
+    float theta = w.k * dot(w.dir, p) - w.omega * t + w.phase;
 
-    float theta = k * dot(d, p) - omega * t + w.phase;
-    float derivative = A * k * cos(theta);
-
-    gradient += derivative * d;
+    float derivative = A * w.k * cos(theta) * exp(sin(theta) - 1.0);
+    gradient += derivative * w.dir;
 }
 
 
 vec3 evaluateWaterNormal(in vec2 p, in float t) {
-    vec2 warpedP;
-    vec2 warpDx;
-    vec2 warpDz;
-    waterWarp(p, t, warpedP, warpDx, warpDz);
+    WaterWarp warpC = waterWarpCoarse(p, t);
+    WaterWarp warpF = waterWarpFine(p, t, warpC);
 
+    float swellState = 1.0 + WATER_SWELL_GUST * warpC.gust;
+    float detailState = clamp(1.0 + WATER_DETAIL_GUST * warpC.gust, 0.25, 2.0);
 
-    // Derivatives
     vec3 dPdx = vec3(0);
     vec3 dPdz = vec3(0);
 
-    for (int i = 0; i < 5; ++i) accumulateGerstnerDerivatives(warpedP, t, WATER_WAVES[i], dPdx, dPdz);
+    for (int i = 0; i < WATER_SWELL_WAVES; ++i)
+        accumulateSwellDerivatives(getWaterWave(i), warpC.p, t, swellState, dPdx, dPdz);
 
-    vec3 tangentX = vec3(1, 0, 0) + dPdx * warpDx.x + dPdz * warpDx.y;
-    vec3 tangentZ = vec3(0, 0, 1) + dPdx * warpDz.x + dPdz * warpDz.y;
+    vec3 tangentX = vec3(1, 0, 0) + dPdx * warpC.dx.x + dPdz * warpC.dx.y;
+    vec3 tangentZ = vec3(0, 0, 1) + dPdx * warpC.dz.x + dPdz * warpC.dz.y;
 
     vec2 detailGradient = vec2(0);
-    for (int i = 0; i < 4; ++i) accumulateWaterDetail(warpedP, t, WATER_DETAIL_WAVES[i], detailGradient);
+    for (int i = WATER_SWELL_WAVES; i < WATER_TOTAL_WAVES; ++i)
+        accumulateDetailGradient(getWaterWave(i), warpF.p, t, detailState, detailGradient);
 
-    tangentX.y += dot(detailGradient, warpDx);
-    tangentZ.y += dot(detailGradient, warpDz);
+    tangentX.y += dot(detailGradient, warpF.dx);
+    tangentZ.y += dot(detailGradient, warpF.dz);
 
     return normalize(cross(tangentZ, tangentX));
 }

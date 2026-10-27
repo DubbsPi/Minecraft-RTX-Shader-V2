@@ -54,8 +54,8 @@ void main() {
         vec3 B = cross(N, T);
         vec3 Ve = vec3(dot(V, T), dot(V, B), dot(V, N));
         vec3 Hl = sampleGGXVNDF(Ve, alpha, vec2(rand(rngState), rand(rngState)));
-        vec3 H  = T * Hl.x + B * Hl.y + N * Hl.z;
-        vec3 R  = reflect(-V, H);
+        vec3 H = T * Hl.x + B * Hl.y + N * Hl.z;
+        vec3 R = reflect(-V, H);
         if (dot(R, N) <= 0.0) R = reflect(-V, N);   // sampled below the surface, fall back to mirror
 
         bool hit = false;
@@ -64,11 +64,11 @@ void main() {
             hit = traceSSR(P + N * 0.03, R, rand(rngState), hitUV);
         }
 
-        vec3 refl = vec3(0.0);
+        vec3 refl = vec3(0);
         float fade = 0.0;
         if (hit) {
             vec2 e = min(hitUV, 1.0 - hitUV);
-            fade = smoothstep(0.0, 0.1, min(e.x, e.y));
+            fade = smoothstep(0.0, 0.05, min(e.x, e.y));
             refl = texture(colortex0, hitUV).rgb;
         }
 
