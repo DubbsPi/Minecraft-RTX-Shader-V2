@@ -52,7 +52,7 @@ float moonPhaseMult(in int moonPhase) {
     else if (moonPhase == 3 || moonPhase == 5)
         return 0.25;
     else
-        return 0.05;
+        return 0.025;
 }
 
 
@@ -77,26 +77,48 @@ void main() {
 
     // Sky
     bool isSky = depth >= 1.0;
-    if (isSky) {
-        vec3 worldDir = normalize(mat3(gbufferModelViewInverse) * toView(texcoord, depth));
+        if (isSky) {
+        vec3 dir = rayDirWorld;
+        float phase = moonPhaseMult(moonPhase);
+        
+        vec3 trans, trans2;
+        vec3 sky = atmosphereSky(dir, sunDirW, vec3(1.0, 0.98, 0.95), 20.0, cameraPosition.y, trans);
+        sky += atmosphereSky(dir, moonDirW, vec3(0.45, 0.55, 0.9), 0.3 * mix(0.1, 1.0, phase), cameraPosition.y, trans2);
 
-        vec3 trans, moonTrans;
-        vec3 sky = atmosphereSky(worldDir, sunDirW, vec3(1.0, 0.98, 0.95), 20.0, cameraPosition.y, trans);
-        sky += atmosphereSky(worldDir, moonDirW, vec3(0.45, 0.55, 0.90), 0.3, cameraPosition.y, moonTrans);
-
-        color = sky;
-
-        if (!any(greaterThan(src.rgb, vec3(0.33)))) {
-            #ifdef VANILLA_STARS
-                color += minecraftStars(rayDirWorld, moonDirW, nightFactor);
-            #else
-                color += realisticStars(rayDirWorld, moonDirW, nightFactor);
-            #endif
-        }
-
-        #if defined VANILLA_SUN || defined VANILLA_MOON
-            color += pow(src.rgb, vec3(2.2)) * SPRITE_BOOST * trans;
+        float moonWash = 1.0 - MOON_WASH * phase * smoothstep(0.0, 0.4, moonDirW.y);
+        vec3 space = vec3(0);
+        #ifdef VANILLA_STARS
+            space += minecraftStars(dir, moonDirW, nightFactor);
+        #else
+            space += realisticStars(dir, moonDirW, nightFactor)
+                   + (nebula(dir, moonDirW, nightFactor) * NEBULA_BRIGHTNESS
+                   + galacticHaze(dir, moonDirW, nightFactor)) * moonWash;
         #endif
+
+
+        vec3 bodies = vec3(0);
+        float cover = 0.0;
+
+        float spriteLum = max(src.r, max(src.g, src.b));
+        float spriteCore = smoothstep(0.25, 0.4, spriteLum);
+        vec3 sprite = pow(src.rgb, vec3(2.2)) * mix(spriteCore, 1.0, SPRITE_GLOW);
+        bodies += sprite * SPRITE_BOOST;
+        cover = spriteCore;
+        
+
+        #ifndef VANILLA_SUN
+            vec4 s = sunBody(dir, sunDirW);
+            bodies += s.rgb;
+            cover = 1.0 - (1.0 - cover) * (1.0 - s.a);
+        #endif
+        #ifndef VANILLA_MOON
+            vec4 m = moonBody(dir, moonDirW, moonPhase) * 0.1;
+            bodies += m.rgb;
+            cover = 1.0 - (1.0 - cover) * (1.0 - m.a);
+        #endif
+
+        vec3 spaceTrans = pow(trans, vec3(SPACE_EXTINCTION));
+        color = sky + space * (1.0 - cover) * spaceTrans + bodies * trans;
     }
     
     // Regular geometry

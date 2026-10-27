@@ -61,6 +61,7 @@ const float SPRITE_BOOST = 6.0;
 
 // Stars
 #define STAR_SLAB 0.5
+#define STAR_SPIN_RATE 0.7 // [0.1 0.3 0.5 0.7 0.9 1.1]
 
 const int MC_STAR_GRID_X = 256;
 const int MC_STAR_GRID_Y = 128;
@@ -72,6 +73,16 @@ const int REAL_STAR_GRID_Y = 256;
 const float REAL_STAR_DENSITY = 0.18;
 const float REAL_STAR_RADIUS = 0.075;
 
+#define GALAXY_WIDTH 0.2 // [0.1 0.15 0.2 0.25 0.3]
+#define GALAXY_BRIGHTNESS 0.05 // [0.025 0.05 0.1 0.15 0.2 0.25 0.3 0.35 0.4 0.45 0.5]
+#define NEBULA_BRIGHTNESS 0.25 // [0.025 0.05 0.1 0.15 0.2 0.25 0.3 0.35 0.4 0.45 0.5]
+#define NEBULA_BAND_BIAS 0.15 // [0.05 0.1 0.15 0.2 0.25 0.3]
+#define STAR_DENSITY_MIN_MULT 0.2
+#define STAR_DENSITY_MAX_MULT 2.5
+
+const vec3 GALAXY_NORMAL = normalize(vec3(0.1, 0.9, 0.3));
+const vec3 GALAXY_CENTER = normalize(vec3(0.9, -0.1, 0.1));
+
 
 // Celestials
 #define VANILLA_CLOUDS 2 // [0 1 2]
@@ -79,11 +90,21 @@ const float REAL_STAR_RADIUS = 0.075;
 //#define VANILLA_MOON
 //#define VANILLA_STARS
 
-// To make sure Iris does not throw away these
-#ifdef VANILLA_SUN
-#endif
-#ifdef VANILLA_MOON
-#endif
+#define SUN_PATH_ROTATION 15.0 // [0.0 5.0 10.0 15.0 20.0 25.0 30.0 35.0 40.0 45.0]
+const float sunPathRotation = SUN_PATH_ROTATION;
+const vec3 CELESTIAL_AXIS = normalize(vec3(0, sin(radians(SUN_PATH_ROTATION)), cos(radians(SUN_PATH_ROTATION))));
+
+#define SPRITE_GLOW 0.5
+#define SPACE_EXTINCTION 0.5
+#define MOON_WASH 0.7
+
+#define SUN_RADIUS_DEG 2.0
+#define MOON_RADIUS_DEG 1.5
+#define SUN_DISC_SCALE 1.0
+#define MOON_DISC_SCALE 1.0
+#define SUN_CORONA 0.25 // [0.0 0.05 0.1 0.15 0.2 0.25 0.3 0.35 0.4 0.45 0.5]
+#define MOON_PHASE_FLIP 1.0 
+#define MOON_ROLL_DEG 90.0
 
 
 // SSR

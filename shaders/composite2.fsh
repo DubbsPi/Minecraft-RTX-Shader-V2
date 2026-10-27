@@ -18,7 +18,6 @@ uniform vec3 upPosition;
 
 uniform vec3 shadowLightPosition;
 uniform vec3 fogColor;
-uniform vec3 cameraPosition;
 
 uniform float far;
 uniform float viewHeight;

@@ -14,8 +14,6 @@ uniform sampler2D colortex2;  // lightmap
 uniform sampler2D colortex4;  // reflection weight and roughness
 
 
-uniform mat4 gbufferProjection;
-uniform mat4 gbufferProjectionInverse;
 uniform mat4 gbufferModelViewInverse;
 
 uniform vec3 sunPosition;
