@@ -21,6 +21,7 @@ value.VANILLA_CLOUDS.2 = Fancy
 
 option.SSR_STEPS = SSR Steps
 option.SSR_REFINE_STEPS = SSR Refine Steps
+option.SSR_THICKNESS = SSR Thickness
 
 
 option.WATER_PIXELATED = Pixelated Water

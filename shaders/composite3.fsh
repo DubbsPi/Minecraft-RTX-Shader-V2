@@ -1,86 +1,112 @@
-#version 430 compatibility
-
-#include "lib/settings.glsl"
-#include "lib/common.glsl"
+#version 330 compatibility
 
 
-uniform sampler2D colortex0;  // albedo
-uniform sampler2D colortex7;  // history
+#define GAMMA_CLIP 2.0
+#define DEPTH_TOL 0.05
+#define FIREFLY_MAX 8.0
+
+
+uniform sampler2D colortex4;  // reflections
+uniform sampler2D reflectionAccumSampler;
+
 uniform sampler2D depthtex0;
+
 
 uniform mat4 gbufferProjectionInverse;
 uniform mat4 gbufferModelViewInverse;
 uniform mat4 gbufferPreviousModelView;
 uniform mat4 gbufferPreviousProjection;
+
 uniform vec3 cameraPosition;
 uniform vec3 previousCameraPosition;
-
 uniform float viewWidth;
 uniform float viewHeight;
-uniform int frameCounter;
 
 
 in vec2 texcoord;
 
-/* RENDERTARGETS: 0,7 */
+/* RENDERTARGETS: 4 */
 layout(location = 0) out vec4 outColor;
-layout(location = 1) out vec4 outHistory;
+layout(rgba16f) uniform image2D reflectionAccum;
 
 
-vec3 compress(in vec3 c) { return c / (1.0 + luma(c)); }
-vec3 decompress(in vec3 c) { return c / max(1.0 - luma(c), 1e-4); }
-
-
-vec3 projDiv(in mat4 m, in vec3 p) {
-    vec4 h = m * vec4(p, 1.0);
-    return h.xyz / h.w;
-}
-
-vec2 reproject(in vec2 uv, in float depth) {
-    vec3 view = projDiv(gbufferProjectionInverse, vec3(uv, depth) * 2.0 - 1.0);
-    vec3 rel  = (gbufferModelViewInverse * vec4(view, 1)).xyz;
-    if (depth < 1.0) rel += cameraPosition - previousCameraPosition;
-    vec3 prevView = (gbufferPreviousModelView * vec4(rel, 1)).xyz;
-    if (prevView.z >= 0.0) return vec2(-1);
-    return projDiv(gbufferPreviousProjection, prevView).xy * 0.5 + 0.5;
+vec3 viewPosFrom(vec2 uv, float depth) {
+    vec4 p = gbufferProjectionInverse * vec4(vec3(uv, depth) * 2.0 - 1.0, 1.0);
+    return p.xyz / p.w;
 }
 
 
 void main() {
-    ivec2 size  = ivec2(viewWidth, viewHeight);
+    vec2 res = vec2(viewWidth, viewHeight);
     ivec2 px = ivec2(gl_FragCoord.xy);
+    ivec2 maxPx = ivec2(res) - 1;
+
     float depth = texelFetch(depthtex0, px, 0).r;
+    vec4 cur = texelFetch(colortex4, px, 0);
 
-    vec3 cur = compress(texelFetch(colortex0, px, 0).rgb);
-
-
-    vec3 m1 = vec3(0), m2 = vec3(0), mn = vec3(1e9), mx = vec3(-1e9);
-    for (int y = -1; y <= 1; y++) {
-        for (int x = -1; x <= 1; x++) {
-            ivec2 p = clamp(px + ivec2(x, y), ivec2(0), size - 1);
-            vec3 c = compress(texelFetch(colortex0, p, 0).rgb);
-            m1 += c; m2 += c * c;
-            mn = min(mn, c); mx = max(mx, c);
-        }
+    if (depth >= 1.0) {
+        outColor = cur;
+        imageStore(reflectionAccum, ivec2(gl_FragCoord.xy), vec4(cur.rgb, 0));
+        return;
     }
-    vec3 mean  = m1 / 9.0;
-    vec3 sigma = sqrt(max(m2 / 9.0 - mean * mean, 0.0));
-    vec3 lo = max(mn, mean - VARIANCE_GAMMA * sigma);
-    vec3 hi = min(mx, mean + VARIANCE_GAMMA * sigma);
 
-    bool isHand = depth < 0.56;
-    vec2 prevUV = isHand ? texcoord : reproject(texcoord, depth);
+    float roughness = cur.a;
+    cur.rgb = min(cur.rgb, vec3(FIREFLY_MAX));
 
-    bool valid = frameCounter > 0 && all(greaterThanEqual(prevUV, vec2(0))) && all(lessThan(prevUV, vec2(1)));
+    vec2 uv = (vec2(px) + 0.5) / res;
+    vec3 viewPos = viewPosFrom(uv, depth);
+    vec3 worldPos = (gbufferModelViewInverse * vec4(viewPos, 1.0)).xyz + cameraPosition;
 
-    vec3 hist = clamp(compress(texture(colortex7, prevUV).rgb), lo, hi);
+    vec3 prevView = (gbufferPreviousModelView * vec4(worldPos - previousCameraPosition, 1.0)).xyz;
+    vec4 prevClip = gbufferPreviousProjection * vec4(prevView, 1.0);
+    vec2 prevUV = prevClip.xy / prevClip.w * 0.5 + 0.5;
 
+    float expectedDepth = -prevView.z;
 
-    float velPx = length((prevUV - texcoord) * vec2(size));
-    float blend = mix(BASE_BLEND, 0.4, clamp(velPx / 8.0, 0.0, 1.0));
-    if (!valid) blend = 1.0;
+    vec2 prevPx = prevUV * res - 0.5;
+    ivec2 base = ivec2(floor(prevPx));
+    vec2 f = fract(prevPx);
+    float bw[4] = float[]((1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y), (1.0 - f.x) * f.y, f.x * f.y);
 
-    vec3 result = decompress(mix(hist, cur, blend));
-    outColor = vec4(result, 1);
-    outHistory = vec4(result, 1);
+    vec3 histSum = vec3(0);
+    float histW = 0.0;
+
+    for (int i = 0; i < 4; i++) {
+        ivec2 tp = base + ivec2(i & 1, i >> 1);
+        if (any(lessThan(tp, ivec2(0))) || any(greaterThan(tp, maxPx))) continue;
+
+        vec4 h = texelFetch(reflectionAccumSampler, tp, 0);
+        if (h.a <= 0.0) continue;
+
+        if (abs(h.a - expectedDepth) > DEPTH_TOL * expectedDepth) continue;
+
+        histSum += h.rgb * bw[i];
+        histW += bw[i];
+    }
+
+    vec3 result = cur.rgb;
+
+    if (histW > 0.01) {
+        vec3 hist = histSum / histW;
+
+        vec3 m1 = vec3(0), m2 = vec3(0);
+        for (int y = -1; y <= 1; y++) {
+            for (int x = -1; x <= 1; x++) {
+                vec3 c = min(texelFetch(colortex4, clamp(px + ivec2(x, y), ivec2(0), maxPx), 0).rgb, vec3(FIREFLY_MAX));
+                m1 += c;
+                m2 += c * c;
+            }
+        }
+        vec3 mean = m1 / 9.0;
+        vec3 sigma = sqrt(max(m2 / 9.0 - mean * mean, 0.0));
+        hist = clamp(hist, mean - GAMMA_CLIP * sigma, mean + GAMMA_CLIP * sigma);
+
+        float maxHist = smoothstep(0.05, 0.5, roughness);
+        float blend = 1.0 - maxHist * histW;
+
+        result = mix(hist, cur.rgb, blend * 0.05);
+    }
+
+    outColor = vec4(result, roughness);
+    imageStore(reflectionAccum, ivec2(gl_FragCoord.xy), vec4(result, -viewPos.z));
 }

@@ -42,7 +42,7 @@ void main() {
             N = normalize(mat3(gbufferModelView) * nW);
         }
 
-        outColor = vec4(glcolor.rgb, 1) * glcolor;
+        outColor = glcolor;
     } else {
         outColor = texture(gtexture, texcoord) * glcolor;
     }

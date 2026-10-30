@@ -4,32 +4,37 @@
 #include "settings.glsl"
 #include "random.glsl"
 #include "common.glsl"
+#include "lut_uitl.glsl"
 
 
-#define NEBULA_SCALE 1.6
-#define NEBULA_WARP 1.2
-#define NEBULA_THRESHOLD 0.48 
-#define NEBULA_INTENSITY 0.35
+uniform int moonPhase;
+uniform float moonPhaseMult;
+uniform float nightFactor;
+uniform vec3 sunDirW;
+uniform vec3 moonDirW;
+
+uniform float sunMuS;
+uniform float moonMuS;
+uniform float sunLightFade;
+uniform float moonLightFade;
+uniform float moonSkyIntensity;
+uniform float moonWashFactor;
+uniform float skyY0;
+uniform vec2 moonSpin;
 
 
-float nightFactor(in vec3 sunDir) {
-    float sunHeight = normalize(sunDir).y;
-    return 1.0 - smoothstep(-0.12, 0.04, sunHeight);
-}
+vec3 moonRelativeDirection(in vec3 rayDir) {
+    const vec3 e1 = vec3(1, 0, 0);
+    const vec3 e2 = cross(CELESTIAL_AXIS, e1);
 
-vec3 moonRelativeDirection(in vec3 rayDir, in vec3 moonDir) {
-    vec3 axis = CELESTIAL_AXIS;
-    vec3 e1 = vec3(1, 0, 0);
-    vec3 e2 = cross(axis, e1);
-
-    float theta = atan(dot(moonDir, e2), dot(moonDir, e1));
-
-    float a = -theta * STAR_SPIN_RATE;
-    float c = cos(a), s = sin(a);
     float x = dot(rayDir, e1);
     float y = dot(rayDir, e2);
 
-    return vec3(c * x - s * y, s * x + c * y, dot(rayDir, axis));
+    return vec3(moonSpin.x * x - moonSpin.y * y, moonSpin.y * x + moonSpin.x * y, dot(rayDir, CELESTIAL_AXIS));
+}
+
+float softElevation(in float y) {
+    return 0.03 + 0.5 * (y + sqrt(y * y + HORIZON_SOFTNESS * HORIZON_SOFTNESS));
 }
 
 
@@ -43,110 +48,89 @@ float flatMiePhase(in float mu, in float g) {
     return 3.0 / (8.0 * PI) * ((1.0 - g2) * (1.0 + mu * mu)) / ((2.0 + g2) * pow(denom, 1.5));
 }
 
-float flatRayleighDensity(in float y, in Atmosphere a) {
-    return exp(-max(y, 0.0) / max(a.rayleighHeight, 1e-4));
-}
-
-float flatMieDensity(in float y, in Atmosphere a) {
-    return exp(-max(y, 0.0) / max(a.mieHeight, 1e-4));
-}
-
-vec2 opticalDepth(in vec3 origin, in vec3 direction, in float dist, in Atmosphere a, in int steps) {
-    if (dist <= 0.0 || steps <= 0 || a.atmosphereHeight <= 0.0) return vec2(0);
-
-    float ds = dist / float(steps);
-    vec2 depth = vec2(0.0);
-
-    for (int i = 0; i < steps; ++i) {
-        float t = (float(i) + 0.5) * ds;
-        float y = origin.y + direction.y * t;
-
-        if (y >= 0.0 && y <= a.atmosphereHeight) {
-            depth.x += flatRayleighDensity(y, a) * ds;
-            depth.y += flatMieDensity(y, a) * ds;
-        }
-    }
-
-    return depth;
-}
-
 vec3 transmittance(in vec2 opticalDepth, in Atmosphere a) {
     return exp(-(a.betaRayleigh * opticalDepth.x) - vec3(a.betaMie * opticalDepth.y));
 }
 
+vec2 opticalDepthToTop(in float y, in float dirY, in Atmosphere a) {
+    float top = a.atmosphereHeight;
+    y = clamp(y, 0.0, top);
+    float rh = max(a.rayleighHeight, 1e-4);
+    float mh = max(a.mieHeight, 1e-4);
+    float mu = max(dirY, 0.03);
+
+    return vec2(rh * (exp(-y / rh) - exp(-top / rh)), mh * (exp(-y / mh) - exp(-top / mh))) / mu;
+}
+
+vec3 skyTransmittance(in vec3 dir, in float camY) {
+    return transmittance(opticalDepthToTop(skyY0, softElevation(dir.y), EARTHLIKE), EARTHLIKE);
+}
+
+
 
 vec3 sunTransmittance(in vec3 sunDirW, in float camY) {
-    float y0 = max(camY - SEA_LEVEL, 0.0) + 1.0;
-    float dist = (EARTHLIKE.atmosphereHeight - y0) / max(sunDirW.y, 0.05);
-    vec2 od = opticalDepth(vec3(0.0, y0, 0.0), sunDirW, dist, EARTHLIKE, 16);
-    return transmittance(od, EARTHLIKE);
+    return transmittance(opticalDepthToTop(skyY0, max(sunDirW.y, 0.05), EARTHLIKE), EARTHLIKE);
 }
 
-vec3 scatterAtmosphere(
-    in vec3 rayOrigin,
-    in vec3 viewDir,
-    in float viewDistance,
-    in vec3 sunDir,
-    in vec3 sunColor,
-    in float sunIntensity,
-    in Atmosphere a,
-    in int viewSteps,
-    in int lightSteps,
-    out vec3 viewTransmittance
- ) {
-    viewTransmittance = vec3(1);
+vec3 atmosphereSkyFast(in vec3 worldDir, in vec3 lightDir, in vec3 lightColor, in float intensity, in float lightFade, in float muS) {
+    if (lightFade <= 0.0) return vec3(0);
 
-    if (viewDistance <= 0.0 || viewSteps <= 0 ||
-        a.atmosphereHeight <= 0.0) {
-        return vec3(0.0);
+    Atmosphere a = EARTHLIKE;
+    float top = a.atmosphereHeight;
+    float HR = max(a.rayleighHeight, 1e-4);
+    float HM = max(a.mieHeight, 1e-4);
+
+    vec3 d = normalize(vec3(worldDir.x, softElevation(worldDir.y), worldDir.z));
+    // softElevation keeps this positive around the horizon, but normalization
+    // can move it slightly below the optical-depth floor.
+    float muV = max(d.y, 0.03);
+    float yEnd = min(top, skyY0 + muV * MAX_SKY_DIST);
+
+    float uR0 = exp(-skyY0 / HR), uRE = exp(-yEnd / HR), uRT = exp(-top / HR);
+    float uM0 = exp(-skyY0 / HM), uME = exp(-yEnd / HM), uMT = exp(-top / HM);
+
+    float deltaMu = muV - muS;
+
+    // Rayleigh. The analytic expression divides by (muV - muS), but its
+    // numerator also tends to zero there. Use the derivative limit instead
+    // of perturbing muV, which can create a colored band near the horizon.
+    vec3 bR = a.betaRayleigh * HR;
+    vec3 tRStart = exp(-bR * ((uR0 - uRT) / muS));
+    vec3 intR;
+    if (abs(deltaMu) < 1e-3) {
+        float yEndLimit = min(top, skyY0 + muS * MAX_SKY_DIST);
+        float uRELimit = exp(-yEndLimit / HR);
+        intR = tRStart * bR * ((uR0 - uRELimit) / muS);
+    } else {
+        vec3 tREnd = exp(-bR * ((uR0 - uRE) / muV + (uRE - uRT) / muS));
+        intR = (tREnd - tRStart) * (muS / deltaMu);
     }
 
-    float ds = viewDistance / float(viewSteps);
-    vec2 viewOD = vec2(0);
-    vec3 scatter = vec3(0);
-    float mu = dot(viewDir, sunDir);
-    float phaseR = flatRayleighPhase(mu);
-    float phaseM = flatMiePhase(mu, a.mieG);
-
-    for (int i = 0; i < viewSteps; ++i) {
-        float t = (float(i) + 0.5) * ds;
-        vec3 samplePos = rayOrigin + viewDir * t;
-        float y = samplePos.y;
-
-        if (y < 0.0 || y > a.atmosphereHeight) continue;
-
-        float densR = flatRayleighDensity(y, a);
-        float densM = flatMieDensity(y, a);
-
-        viewOD += vec2(densR, densM) * ds;
-
-        if (sunDir.y <= 0.0) continue;
-
-        float lightDistance = (a.atmosphereHeight - y) / max(sunDir.y, 1e-5);
-        vec2 sunOD = opticalDepth(samplePos, sunDir, lightDistance, a, lightSteps);
-
-        vec3 transSun = transmittance(sunOD, a);
-        vec3 transView = transmittance(viewOD, a);
-
-        vec3 extinctionR = a.betaRayleigh * densR;
-        vec3 extinctionM = vec3(a.betaMie * densM);
-
-        scatter += transView * transSun * sunColor * sunIntensity * (extinctionR * phaseR + extinctionM * phaseM) * ds;
+    // Mie, using the same stable limit as the Rayleigh integral.
+    float bM = a.betaMie * HM;
+    float tMStart = exp(-bM * ((uM0 - uMT) / muS));
+    float intM;
+    if (abs(deltaMu) < 1e-3) {
+        float yEndLimit = min(top, skyY0 + muS * MAX_SKY_DIST);
+        float uMELimit = exp(-yEndLimit / HM);
+        intM = tMStart * bM * ((uM0 - uMELimit) / muS);
+    } else {
+        float tMEnd = exp(-bM * ((uM0 - uME) / muV + (uME - uMT) / muS));
+        intM = (tMEnd - tMStart) * (muS / deltaMu);
     }
 
-    viewTransmittance = transmittance(viewOD, a);
+    // Attenuation
+    float uMr = max(uM0 * 0.1353, uME);
+    float odM = HM * ((uM0 - uMr) / muV + (uMr - uMT) / muS);
+    float crossM = exp(-a.betaMie * odM);
+
+    float uRm = max(uR0 * exp(-HM / HR), uRE);
+    float odR = HR * ((uR0 - uRm) / muV + (uRm - uRT) / muS);
+    vec3 crossR = exp(-a.betaRayleigh * odR);
+
+    float mu = dot(d, lightDir);
+    vec3 scatter = (intR * crossM * flatRayleighPhase(mu) + vec3(intM) * crossR * flatMiePhase(mu, a.mieG)) * lightColor * intensity * lightFade;
     return max(scatter, vec3(0));
-}
-
-vec3 atmosphereSky(in vec3 worldDir, in vec3 lightDir, in vec3 lightColor, in float intensity, in float camY, out vec3 viewTrans) {
-    vec3 d = worldDir;
-    d.y = smoothstep(0.001, 1.0, d.y);
-    d = normalize(d);
-
-    vec3 origin = vec3(0, max(camY - SEA_LEVEL, 0.0) + 1.0, 0);
-    float dist = min((EARTHLIKE.atmosphereHeight - origin.y) / d.y, MAX_SKY_DIST);
-
-    return scatterAtmosphere(origin, d, dist, lightDir, lightColor, intensity, EARTHLIKE, SKY_VIEW_STEPS, SKY_LIGHT_STEPS, viewTrans);
 }
 
 
@@ -164,10 +148,9 @@ void starFrame(in vec3 n, in float angle, out vec3 a, out vec3 b) {
 }
 
 
-vec3 minecraftStars(in vec3 rayDir, in vec3 moonDirW, in float nightFactor) {
-    if (nightFactor <= 0.0) return vec3(0);
+vec3 minecraftStars(in vec3 starDir, in bool runAnyways) {
+    if (nightFactor <= 0.0 && !runAnyways) return vec3(0);
 
-    vec3 starDir = moonRelativeDirection(rayDir, moonDirW);
     vec3 p = starDir * starScale(MC_STAR_GRID_X, MC_STAR_GRID_Y);
     ivec3 base = ivec3(floor(p));
 
@@ -250,10 +233,9 @@ float starClusterFactor(in vec3 n) {
     return mix(STAR_DENSITY_MIN_MULT, STAR_DENSITY_MAX_MULT, t);
 }
 
-vec3 realisticStars(in vec3 rayDir, in vec3 moonDirW, in float nightFactor) {
-    if (nightFactor <= 0.0) return vec3(0);
+vec3 realisticStars(in vec3 starDir, in bool runAnyways) {
+    if (nightFactor <= 0.0 && !runAnyways) return vec3(0);
 
-    vec3 starDir = moonRelativeDirection(rayDir, moonDirW);
     vec3 p = starDir * starScale(REAL_STAR_GRID_X, REAL_STAR_GRID_Y);
     ivec3 base = ivec3(floor(p));
 
@@ -303,14 +285,13 @@ vec3 realisticStars(in vec3 rayDir, in vec3 moonDirW, in float nightFactor) {
         result += starColor * (brightness * core + halo * 0.08);
     }
 
-    return result * nightFactor;
+    return result;
 }
 
 
-vec3 nebula(in vec3 rayDir, in vec3 moonDirW, in float nightFactor) {
-    if (nightFactor <= 0.0) return vec3(0);
+vec3 nebula(in vec3 d, in bool runAnyways) {
+    if (nightFactor <= 0.0 && !runAnyways) return vec3(0);
 
-    vec3 d = moonRelativeDirection(rayDir, moonDirW);
     float band = galaxyBand(galaxyLatitude(d));
 
     vec3 p;
@@ -330,13 +311,12 @@ vec3 nebula(in vec3 rayDir, in vec3 moonDirW, in float nightFactor) {
     float core = cloud * cloud * cloud;
     vec3 emission = col * (cloud * 0.35 + core * 0.9) * lanes;
 
-    return emission * NEBULA_INTENSITY * nightFactor;
+    return emission * NEBULA_INTENSITY;
 }
 
-vec3 galacticHaze(in vec3 rayDir, in vec3 moonDirW, in float nightFactor) {
-    if (nightFactor <= 0.0) return vec3(0);
+vec3 galacticHaze(in vec3 d, in bool runAnyways) {
+    if (nightFactor <= 0.0 && !runAnyways) return vec3(0);
 
-    vec3 d = moonRelativeDirection(rayDir, moonDirW);
     float lat = galaxyLatitude(d);
     float band = galaxyBand(lat);
     if (band < 0.04) return vec3(0);
@@ -352,7 +332,7 @@ vec3 galacticHaze(in vec3 rayDir, in vec3 moonDirW, in float nightFactor) {
 
     vec3 tint = mix(vec3(0.75, 0.85, 1.00), vec3(1.00, 0.85, 0.65), bulge);
 
-    return tint * density * (0.65 + 0.7 * grain) * GALAXY_BRIGHTNESS * nightFactor;
+    return tint * density * (0.65 + 0.7 * grain) * GALAXY_BRIGHTNESS;
 }
 
 
@@ -361,11 +341,11 @@ void bodyFrame(in vec3 dir, out vec3 right, out vec3 up) {
     up = cross(right, dir);
 }
 
-vec4 sunBody(in vec3 rd, in vec3 sunDir) {
-    if (dot(rd, sunDir) <= 0.0) return vec4(0);
+vec4 sunBody(in vec3 rd) {
+    if (dot(rd, sunDirW) <= 0.0) return vec4(0);
 
     const float sinR = sin(radians(SUN_RADIUS_DEG));
-    float x = length(cross(rd, sunDir)) / sinR;
+    float x = length(cross(rd, sunDirW)) / sinR;
     if (x > 16.0) return vec4(0);
 
     float cover = 1.0 - smoothstep(0.88, 1.0, x);
@@ -378,12 +358,12 @@ vec4 sunBody(in vec3 rd, in vec3 sunDir) {
     return vec4(col * (limb * cover * SUN_DISC_SCALE + corona) * SPRITE_BOOST, cover);
 }
 
-vec4 moonBody(in vec3 rd, in vec3 moonDir, in int phase) {
-    if (dot(rd, moonDir) <= 0.0) return vec4(0);
+vec4 moonBody(in vec3 rd) {
+    if (dot(rd, moonDirW) <= 0.0) return vec4(0);
 
     const float sinR = sin(radians(MOON_RADIUS_DEG));
     vec3 right, up;
-    bodyFrame(moonDir, right, up);
+    bodyFrame(moonDirW, right, up);
 
     vec2 p = vec2(dot(rd, right), dot(rd, up)) / sinR;
 
@@ -396,7 +376,7 @@ vec4 moonBody(in vec3 rd, in vec3 moonDir, in int phase) {
 
     float h = sqrt(1.0 - r2);
 
-    float alpha = float(phase) * (PI * 0.25);
+    float alpha = float(moonPhase) * (PI * 0.25);
     float ndl = -p.x * sin(alpha) * MOON_PHASE_FLIP + h * cos(alpha);
     float lit = smoothstep(-0.03, 0.10, ndl);
 
@@ -409,6 +389,91 @@ vec4 moonBody(in vec3 rd, in vec3 moonDir, in int phase) {
 
     float cover = 1.0 - smoothstep(0.90, 1.0, sqrt(r2));
     return vec4(col * cover * SPRITE_BOOST * MOON_DISC_SCALE, cover);
+}
+
+
+vec3 getSkyAtmosphere(in vec3 dir, in vec3 vanillaSky, in bool useVanillaSky, out vec3 trans, out float cover) {
+    vec3 unusedA, unusedB;
+    vec3 sky = atmosphereSkyFast(dir, sunDirW,  vec3(1.0, 0.98, 0.95), 10.0, sunLightFade, sunMuS);
+    sky += atmosphereSkyFast(dir, moonDirW, vec3(0.45, 0.55, 0.9), moonSkyIntensity, moonLightFade, moonMuS);
+
+    float belowHorizon = 1.0 - smoothstep(-0.25, 0.0, dir.y);
+    sky *= mix(1.0, GROUND_DIM, belowHorizon);
+    
+    trans = skyTransmittance(dir, cameraPosition.y);
+
+    vec3 bodies = vec3(0);
+    cover = 0.0;
+
+    if (useVanillaSky) {
+        float spriteLum = max(vanillaSky.r, max(vanillaSky.g, vanillaSky.b));
+        float spriteCore = smoothstep(0.25, 0.4, spriteLum);
+        vec3 sprite = pow(vanillaSky, vec3(2.2)) * mix(spriteCore, 1.0, SPRITE_GLOW);
+        bodies += sprite * SPRITE_BOOST;
+        cover = spriteCore;
+    }
+
+    #ifndef VANILLA_SUN
+        vec4 s = sunBody(dir);
+        bodies += s.rgb;
+        cover = 1.0 - (1.0 - cover) * (1.0 - s.a);
+    #else
+        if (!useVanillaSky) {
+            vec4 s = sunBody(dir);
+            bodies += s.rgb;
+            cover = 1.0 - (1.0 - cover) * (1.0 - s.a);
+        }
+    #endif
+    #ifndef VANILLA_MOON
+        vec4 m = moonBody(dir);
+        m.rgb *= 0.1;
+        bodies += m.rgb;
+        cover = 1.0 - (1.0 - cover) * (1.0 - m.a);
+    #else
+        if (!useVanillaSky) {
+            vec4 m = moonBody(dir);
+            m.rgb *= 0.1;
+            bodies += m.rgb;
+            cover = 1.0 - (1.0 - cover) * (1.0 - m.a);
+        }
+    #endif
+    
+    float horizonMask = smoothstep(-0.3, 0.06, dir.y);
+    bodies *= horizonMask;
+    cover *= horizonMask;
+
+    return sky + bodies * trans;
+}
+
+vec3 getSkyLut(in vec3 dir) {
+    vec3 space = vec3(0);
+    #ifdef VANILLA_STARS
+        space += minecraftStars(dir, true);
+    #else
+        space += realisticStars(dir, true);
+    #endif
+    #ifdef NEBULA
+        space += nebula(dir, true) * NEBULA_BRIGHTNESS;
+    #endif
+    #ifdef GALATIC_HAZE
+        space += galacticHaze(dir, true);
+    #endif
+
+    return space;
+}
+
+
+vec3 sampleSky(in vec3 rayDir, in vec3 spaceDir, in vec3 vanillaSky, in bool useVanillaSky) {
+    vec3 trans;
+    float cover;
+    vec3 sky = getSkyAtmosphere(rayDir, vanillaSky, useVanillaSky, trans, cover);
+
+    if (nightFactor <= 0.0) return sky;
+
+    vec3 space = sampleSkyLut(spaceDir);
+    vec3 spaceTrans = pow(trans, vec3(SPACE_EXTINCTION));
+    float horizonMask = smoothstep(-0.3, 0.06, rayDir.y);
+    return sky + space * nightFactor * moonWashFactor * (1.0 - cover) * spaceTrans * horizonMask;
 }
 
 

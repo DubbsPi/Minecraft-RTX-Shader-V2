@@ -80,9 +80,9 @@ float findBlockerDistance(in vec3 shadowClipPos, in float phi) {
     float searchRadius = SEARCH_RADIUS_BLOCKS * abs(shadowProjection[0][0]);
 
     float sum = 0.0, count = 0.0;
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < PCSS_BLOCKER_SAMPLES; i++) {
         vec3 c = shadowClipPos;
-        c.xy += vogelDisk(i, 8, phi) * searchRadius;
+        c.xy += vogelDisk(i, PCSS_BLOCKER_SAMPLES, phi) * searchRadius;
         vec3 distorted = distortShadowClipPos(c);
         vec3 screenPos = distorted * 0.5 + 0.5;
         if (screenPos.x < 0.0 || screenPos.x > 1.0 || screenPos.y < 0.0 || screenPos.y > 1.0) continue;

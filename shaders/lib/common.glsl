@@ -18,6 +18,12 @@ struct Atmosphere {
 };
 
 
+struct Vertex {
+    uint xy;
+    uint zw;
+};
+
+
 float luma(in vec3 c) {return dot(c, vec3(0.2126, 0.7152, 0.0722));}
 
 vec3 projectAndDivide(in mat4 projectionMatrix, in vec3 position){

@@ -31,45 +31,66 @@ bool traceSSR(in vec3 P, in vec3 R, in float dither, out vec2 hitUV) {
     hitUV = vec2(0.0);
 
     float len = SSR_MAX_DIST;
-    if (P.z + R.z * len > -0.1) len = (-0.1 - P.z) / R.z;   // don't march behind the camera
+    if (R.z > 1e-5 && P.z + R.z * len > -0.1) len = (-0.1 - P.z) / R.z;
     if (len <= 0.0) return false;
 
-    vec3 s0 = viewToScreen(P);
-    vec3 s1 = viewToScreen(P + R * len);
-    vec3 stepS = (s1 - s0) / float(SSR_STEPS);
+    vec3 endP = P + R * len;
+    vec4 clip0 = gbufferProjection * vec4(P, 1.0);
+    vec4 clip1 = gbufferProjection * vec4(endP, 1.0);
+    if (clip0.w <= 0.0 || clip1.w <= 0.0) return false;
 
-    vec3 prev = s0;
-    vec3 s = s0 + stepS * dither;
+    vec2 uv0 = clip0.xy / clip0.w * 0.5 + 0.5;
+    vec2 uv1 = clip1.xy / clip1.w * 0.5 + 0.5;
+    if (any(lessThan(uv0, vec2(0.0))) || any(greaterThan(uv0, vec2(1.0)))) return false;
+
+    vec2 pixelDelta = (uv1 - uv0) * vec2(textureSize(depthtex0, 0));
+    float pixelSpan = max(abs(pixelDelta.x), abs(pixelDelta.y));
+    float stepCount = min(max(ceil(pixelSpan), 1.0), float(SSR_STEPS));
+    float invW0 = 1.0 / clip0.w;
+    float invW1 = 1.0 / clip1.w;
+    float viewZOverW0 = P.z * invW0;
+    float viewZOverW1 = endP.z * invW1;
+
+    float prevT = 0.0;
+    float prevDiff = -SSR_THICKNESS;
+    dither = clamp(dither, 0.0, 1.0);
 
     for (int i = 0; i < SSR_STEPS; i++) {
-        s += stepS;
-        if (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0 || s.z < 0.0 || s.z >= 1.0) return false;
+        if (float(i) >= stepCount) break;
+        float t = min((float(i) + dither) / stepCount, 1.0);
+        if (t <= prevT) continue;
 
-        float sceneD = texture(depthtex0, s.xy).r;
+        vec2 uv = mix(uv0, uv1, t);
+        if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return false;
+
+        float invW = mix(invW0, invW1, t);
+        float rayZ = mix(viewZOverW0, viewZOverW1, t) / invW;
+        float sceneD = texture(depthtex0, uv).r;
+        float diff = -SSR_THICKNESS;
         if (sceneD < 1.0) {
-            float diff = viewZ(sceneD) - viewZ(s.z);
-            if (diff > 0.0 && diff < SSR_THICKNESS) {
-                vec3 lo = prev, hi = s;
-                for (int j = 0; j < SSR_REFINE_STEPS; j++) {
-                    vec3 m = 0.5 * (lo + hi);
-                    float df = viewZ(texture(depthtex0, m.xy).r) - viewZ(m.z);
-                    if (df > 0.0) hi = m; else lo = m;
+            diff = viewZ(sceneD) - rayZ;
+            if (diff > 0.0 && (prevDiff <= 0.0 || diff < SSR_THICKNESS)) {
+                float hi = t;
+                if (prevDiff <= 0.0) {
+                    float lo = prevT;
+                    for (int j = 0; j < SSR_REFINE_STEPS; j++) {
+                        float mid = 0.5 * (lo + hi);
+                        vec2 midUV = mix(uv0, uv1, mid);
+                        float midInvW = mix(invW0, invW1, mid);
+                        float midRayZ = mix(viewZOverW0, viewZOverW1, mid) / midInvW;
+                        float midSceneD = texture(depthtex0, midUV).r;
+                        float midDiff = midSceneD < 1.0 ? viewZ(midSceneD) - midRayZ : -SSR_THICKNESS;
+                        if (midDiff > 0.0) hi = mid; else lo = mid;
+                    }
                 }
-                hitUV = hi.xy;
+                hitUV = mix(uv0, uv1, hi);
                 return true;
             }
         }
-        prev = s;
+        prevDiff = diff;
+        prevT = t;
     }
     return false;
-}
-
-vec3 skyReflection(in vec3 dirW, in vec3 sunDirW, in vec3 moonDirW) {
-    vec3 t1, t2;
-    vec3 sky = atmosphereSky(dirW, sunDirW,  vec3(1.0, 0.98, 0.95), 20.0, cameraPosition.y, t1);
-    sky += atmosphereSky(dirW, moonDirW, vec3(0.45, 0.55, 0.90), 0.3,  cameraPosition.y, t2);
-    sky += vec3(0.001, 0.0015, 0.003);
-    return sky * mix(1.0, 0.25, clamp(-dirW.y * 4.0, 0.0, 1.0));
 }
 
 

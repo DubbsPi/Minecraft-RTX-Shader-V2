@@ -1,7 +1,13 @@
 #version 430 compatibility
 
+#include "lib/settings.glsl"
+#ifdef VERTEX_COUNT_DEBUG
+    #include "lib/vertex_util.glsl"
+#endif
 
 uniform sampler2D colortex0;
+uniform sampler2D skyLutSampler;
+
 
 in vec2 texcoord;
 
@@ -44,8 +50,21 @@ void main() {
 
     // Dithering
     float dither = bayerDither(gl_FragCoord.xy);
-    const float depth = 1.0 / 1023.0;
+    const float depth = 1.0 / 255.0;
     color += dither * depth;
+
+    #ifdef VERTEX_COUNT_DEBUG
+    if (texcoord.y < 0.02) {
+        float vertexUsage = min(float(VertexCounters.vertexCount) / float(MAX_VERTS), 1.0);
+        color = vec3(0.05);
+
+        if (texcoord.x < vertexUsage) {
+            color = VertexCounters.vertexCount > MAX_VERTS
+                ? vec3(1.0, 0.0, 0.0)
+                : vec3(texcoord.x, 1.0 - texcoord.x, 0.0);
+        }
+    }
+    #endif
 
     outColor = vec4(color, 1);
 }

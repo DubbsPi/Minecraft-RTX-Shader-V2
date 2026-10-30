@@ -1,6 +1,9 @@
 #include "taa.glsl"
 
 
+uniform mat4 gbufferModelViewInverse;
+
+
 out vec2 texcoord;
 out vec2 lmcoord;
 out vec4 glcolor;
