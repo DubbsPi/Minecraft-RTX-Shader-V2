@@ -113,7 +113,7 @@ const float sunPathRotation = SUN_PATH_ROTATION;
 #define MOON_RADIUS_DEG 1.5
 #define SUN_DISC_SCALE 1.0
 #define MOON_DISC_SCALE 1.0
-#define SUN_CORONA 0.25 // [0.0 0.05 0.1 0.15 0.2 0.25 0.3 0.35 0.4 0.45 0.5]
+#define SUN_CORONA 0.15 // [0.0 0.05 0.1 0.15 0.2 0.25 0.3 0.35]
 #define MOON_PHASE_FLIP 1.0 
 #define MOON_ROLL_DEG 90.0
 
@@ -122,7 +122,7 @@ const float sunPathRotation = SUN_PATH_ROTATION;
 #define SSR_STEPS 48 // [16 32 48 64 96]
 #define SSR_REFINE_STEPS 4 // [2 3 4 5 6]
 #define SSR_MAX_DIST 64.0
-#define SSR_THICKNESS 0.2 // [0.1 0.2 0.35 0.5]
+#define SSR_THICKNESS 0.5 // [0.2 0.35 0.5 0.75]
 #define SSR_MAX_ROUGHNESS 0.6
 
 
@@ -174,12 +174,29 @@ const vec2 WATER_FINE_SCROLL = vec2(0.22, -0.30);
 
 
 // RTX features
-#define RTX_FEATURES  // with this off 425fps in sky noon
-#define MAX_VERTS 16777216 // [1048576 2097152 4194304 8388608 16777216]
+#define RTX_FEATURES  // with this off 530fps in sky noon no shadow gsh
+#define MAX_TRIS 4194304 // [262144 589824 1048576 2359296 4194304]
 #define MAX_DIST 256.0 // [32.0 64.0 128.0 196.0 256.0 384.0]
-#define POS_BIAS 1 << 20
+#define POS_BIAS (1 << 20)
 
-//#define VERTEX_COUNT_DEBUG
+const float RAY_EPSILON = 1e-6;
+
+#if MAX_TRIS == 4194304
+    #define MAX_VERTS_SQRT 4096
+#elif MAX_TRIS == 2359296
+    #define MAX_VERTS_SQRT 3072
+#elif MAX_TRIS == 1048576
+    #define MAX_VERTS_SQRT 2048
+#elif MAX_TRIS == 589824
+    #define MAX_VERTS_SQRT 1536
+#elif MAX_TRIS == 262144
+    #define MAX_VERTS_SQRT 1024
+#endif
+
+#ifdef RTX_FEATURES
+#endif
+
+#define VERTEX_COUNT_DEBUG
 
 
 #endif

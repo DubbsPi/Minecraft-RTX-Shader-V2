@@ -3,6 +3,7 @@
 #include "lib/settings.glsl"
 #include "lib/random.glsl"
 #include "lib/ssr.glsl"
+#include "lib/rtx.glsl"
 #include "lib/sky.glsl"
 #include "lib/pbr.glsl"
 #include "lib/common.glsl"
@@ -42,11 +43,11 @@ void main() {
     bool translucent = dot(nd.xyz, nd.xyz) >= 0.25;
     float d0 = texture(depthtex0, texcoord).r;
 
-    vec4 rw = vec4(0.0);
+    vec4 rw = vec4(0);
     if (!translucent) {
         rw = texture(colortex4, texcoord);
         if (d0 >= 1.0 || luma(rw.rgb) <= 0.01) {
-            outColor = vec4(0.0, 0.0, 0.0, rw.a);
+            outColor = vec4(0, 0, 0, rw.a);
             return;
         }
     }
@@ -106,7 +107,7 @@ void main() {
     float fade = 0.0;
     if (hit) {
         vec2 e = min(hitUV, 1.0 - hitUV);
-        fade = smoothstep(0.0, translucent ? 0.1 : 0.05, min(e.x, e.y));
+        fade = smoothstep(0.0, translucent? 0.1 : 0.05, min(e.x, e.y));
         refl = texture(colortex0, hitUV).rgb;
     }
     if (!hit || fade < 1.0) {
@@ -114,7 +115,20 @@ void main() {
         vec3 spaceDir = moonRelativeDirection(dirW);
         vec3 sky = sampleSky(dirW, spaceDir, scene, true);
         refl = mix(sky, refl, fade);
-    }
+    }/*
+
+    vec3 refl = vec3(0);
+
+    vec3 roF = (gbufferModelViewInverse * vec4(P + N * 0.03, 1.0)).xyz;
+    vec3 rdF = normalize(mat3(gbufferModelViewInverse) * R);
+    
+    vec4 traceHit = vec4(-1);
+    if (doTrace) traceHit = bruteForceTrace(roF, rdF);
+    bool hit = traceHit.x > -0.5;
+    if (hit) outColor = vec4(0, 1, 0, 0);
+    else if (doTrace) outColor = vec4(1, 0, 0, 0);
+    else outColor = texture(colortex0, texcoord);
+    return;*/
 
     if (!translucent) {
         outColor = vec4(refl * rw.rgb, rw.a);

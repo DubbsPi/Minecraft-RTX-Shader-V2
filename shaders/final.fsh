@@ -3,6 +3,7 @@
 #include "lib/settings.glsl"
 #ifdef VERTEX_COUNT_DEBUG
     #include "lib/vertex_util.glsl"
+    uniform float viewWidth;
 #endif
 
 uniform sampler2D colortex0;
@@ -55,14 +56,10 @@ void main() {
 
     #ifdef VERTEX_COUNT_DEBUG
     if (texcoord.y < 0.02) {
-        float vertexUsage = min(float(VertexCounters.vertexCount) / float(MAX_VERTS), 1.0);
+        float triUsage = min(float(TriCounter.triCount) / float(MAX_TRIS), 1.0);
         color = vec3(0.05);
 
-        if (texcoord.x < vertexUsage) {
-            color = VertexCounters.vertexCount > MAX_VERTS
-                ? vec3(1.0, 0.0, 0.0)
-                : vec3(texcoord.x, 1.0 - texcoord.x, 0.0);
-        }
+        if (texcoord.x < triUsage) color = vec3(texcoord.x, 1.0 - texcoord.x, 0.0);
     }
     #endif
 

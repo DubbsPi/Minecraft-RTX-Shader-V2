@@ -134,6 +134,7 @@ void main() {
 
         // SSS
         float backFacing = max(-rawNdotL, 0.0);
+        backFacing *= backFacing;
         vec3 directSSS = albedo * (SSS_STRENGTH * INV_PI) * backFacing * sunE * shadow;
 
         // Ambient
