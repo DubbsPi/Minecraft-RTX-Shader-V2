@@ -3,10 +3,12 @@
 #include "lib/settings.glsl"
 #include "lib/random.glsl"
 #include "lib/ssr.glsl"
+#include "lib/vertex_util.glsl"
 #include "lib/rtx.glsl"
 #include "lib/sky.glsl"
 #include "lib/pbr.glsl"
 #include "lib/common.glsl"
+#include "lib/lighting.glsl"
 
 
 uniform sampler2D colortex0;  // opaque scene
@@ -14,6 +16,7 @@ uniform sampler2D colortex1;  // opaque normals
 uniform sampler2D colortex4;  // reflection weight
 uniform sampler2D colortex5;  // translucent tint
 uniform sampler2D colortex6;  // translucent normal
+uniform sampler2D colortex8;  // texture atlas
 
 
 uniform mat4 gbufferModelViewInverse;
@@ -29,19 +32,27 @@ uniform int frameCounter;
 
 in vec2 texcoord;
 
-/* RENDERTARGETS: 4 */
+/* RENDERTARGETS: 4,7 */
 layout(location = 0) out vec4 outColor;
+layout(location = 1) out vec4 relfDepth;
 
 
 //#define WATER_DEBUG 1
 
 
 void main() {
-    uint rngState = randInt(ivec2(gl_FragCoord.xy), ivec2(viewWidth, viewHeight), frameCounter);
+    uint rngState = randInt(uvec2(gl_FragCoord.xy), uvec2(viewWidth, viewHeight), uint(frameCounter));
 
     vec4 nd = texture(colortex6, texcoord);
     bool translucent = dot(nd.xyz, nd.xyz) >= 0.25;
     float d0 = texture(depthtex0, texcoord).r;
+    outColor = vec4(0);
+
+    #ifdef RTX_REFLECTIONS
+        relfDepth = vec4(1, 0, 0, 1);
+    #else
+        relfDepth = vec4(d0, 0, 0, 1);
+    #endif
 
     vec4 rw = vec4(0);
     if (!translucent) {
@@ -86,7 +97,7 @@ void main() {
         N = normalize(texture(colortex1, texcoord).xyz * 2.0 - 1.0);
 
         float alpha = max(rw.a * rw.a, 1e-3);
-        vec3 up = abs(N.z) < 0.999 ? vec3(0, 0, 1) : vec3(1, 0, 0);
+        vec3 up = abs(N.z) < 0.999? vec3(0, 0, 1) : vec3(1, 0, 0);
         vec3 T = normalize(cross(up, N));
         vec3 B = cross(N, T);
         vec3 Ve = vec3(dot(V, T), dot(V, B), dot(V, N));
@@ -98,41 +109,72 @@ void main() {
         doTrace = rw.a < SSR_MAX_ROUGHNESS;
     }
 
-    
-    bool hit = false;
-    vec2 hitUV = vec2(0);
-    if (doTrace) hit = traceSSR(P + N * 0.03, R, rand(rngState), hitUV);
-
     vec3 refl = vec3(0);
-    float fade = 0.0;
-    if (hit) {
-        vec2 e = min(hitUV, 1.0 - hitUV);
-        fade = smoothstep(0.0, translucent? 0.1 : 0.05, min(e.x, e.y));
-        refl = texture(colortex0, hitUV).rgb;
-    }
-    if (!hit || fade < 1.0) {
-        vec3 dirW = normalize(mat3(gbufferModelViewInverse) * R);
-        vec3 spaceDir = moonRelativeDirection(dirW);
-        vec3 sky = sampleSky(dirW, spaceDir, scene, true);
-        refl = mix(sky, refl, fade);
-    }/*
+    #ifdef RTX_REFLECTIONS
+        bool outsideRTXRange = false;
 
-    vec3 refl = vec3(0);
+        if (doTrace) {
+            vec3 roW = (gbufferModelViewInverse * vec4(P + N * 0.03, 1)).xyz;
+            vec3 rdW = normalize(mat3(gbufferModelViewInverse) * R);
+            if (any(greaterThan(abs(roW), vec3(ACTUAL_MAX_DIST)))) outsideRTXRange = true;
+            else {
+                float tHit; vec2 hitUV;
+                uint triIdx; bool first;
+                bool hit = bruteForceTrace(roW, rdW, tHit, hitUV, triIdx, first);
 
-    vec3 roF = (gbufferModelViewInverse * vec4(P + N * 0.03, 1.0)).xyz;
-    vec3 rdF = normalize(mat3(gbufferModelViewInverse) * R);
+                if (hit) {
+                    vec2 triUV[3]; vec4 triGlColor[3];
+                    getTriAttributes(triIdx, first, triUV, triGlColor);
+
+                    float w0 = 1.0 - hitUV.x - hitUV.y;
+                    vec2 hitTexcoord = triUV[0] * w0 + triUV[1] * hitUV.x + triUV[2] * hitUV.y;
+                    vec4 hitGlColor = triGlColor[0] * w0 + triGlColor[1] * hitUV.x + triGlColor[2] * hitUV.y;
+
+                    vec3 albedo = texture(colortex8, hitTexcoord).rgb;
+                    albedo = pow(max(albedo, vec3(0)), vec3(2.2));
+
+                    refl = albedo * hitGlColor.rgb;
+                } else {
+                    tHit = MAX_DIST;
+                    vec3 spaceDir = moonRelativeDirection(rdW);
+                    refl = sampleSky(rdW, spaceDir, scene, true);
+                }
+
+                float virtDist = min(length(P) + tHit, VIRT_MAX);
+                relfDepth = vec4(virtDist / VIRT_MAX, translucent? 0.0 : 1.0, 0, 1);
+            }
+        }
+
+        if (!translucent && !outsideRTXRange) {
+            outColor = vec4(refl * rw.rgb, rw.a);
+            return;
+        }
+    #else
+        bool outsideRTXRange = true;
+    #endif
     
-    vec4 traceHit = vec4(-1);
-    if (doTrace) traceHit = bruteForceTrace(roF, rdF);
-    bool hit = traceHit.x > -0.5;
-    if (hit) outColor = vec4(0, 1, 0, 0);
-    else if (doTrace) outColor = vec4(1, 0, 0, 0);
-    else outColor = texture(colortex0, texcoord);
-    return;*/
+    if (outsideRTXRange) {
+        bool hit = false;
+        vec2 hitUV = vec2(0);
+        if (doTrace) hit = traceSSR(P + N * 0.03, R, rand(rngState), hitUV);
 
-    if (!translucent) {
-        outColor = vec4(refl * rw.rgb, rw.a);
-        return;
+        float fade = 0.0;
+        if (hit) {
+            vec2 e = min(hitUV, 1.0 - hitUV);
+            fade = smoothstep(0.0, translucent ? 0.1 : 0.05, min(e.x, e.y));
+            refl = texture(colortex0, hitUV).rgb;
+        }
+        if (!hit || fade < 1.0) {
+            vec3 dirW = normalize(mat3(gbufferModelViewInverse) * R);
+            vec3 spaceDir = moonRelativeDirection(dirW);
+            vec3 sky = sampleSky(dirW, spaceDir, scene, true);
+            refl = mix(sky, refl, fade);
+        }
+
+        if (!translucent) {
+            outColor = vec4(refl * rw.rgb, rw.a);
+            return;
+        }
     }
 
 

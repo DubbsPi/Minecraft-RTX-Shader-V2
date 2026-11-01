@@ -11,6 +11,7 @@ const ivec3 workgroups = ivec3(1, 1, 1);
 
 void main() {
     if (gl_GlobalInvocationID.x == 0) {
-        TriCounter.triCount = 0u;
+        TriCounter.quadCount = 0u;
+        TriCounter.vertexCount = 0u;
     }
 }

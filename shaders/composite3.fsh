@@ -1,4 +1,6 @@
-#version 330 compatibility
+#version 430 compatibility
+
+#include "lib/settings.glsl"
 
 
 #define GAMMA_CLIP 2.0
@@ -7,10 +9,8 @@
 
 
 uniform sampler2D colortex4;  // reflections
+uniform sampler2D colortex7;  // reflection depth
 uniform sampler2D reflectionAccumSampler;
-
-uniform sampler2D depthtex0;
-
 
 uniform mat4 gbufferProjectionInverse;
 uniform mat4 gbufferModelViewInverse;
@@ -22,8 +22,8 @@ uniform vec3 previousCameraPosition;
 uniform float viewWidth;
 uniform float viewHeight;
 
-
 in vec2 texcoord;
+
 
 /* RENDERTARGETS: 4 */
 layout(location = 0) out vec4 outColor;
@@ -35,26 +35,37 @@ vec3 viewPosFrom(vec2 uv, float depth) {
     return p.xyz / p.w;
 }
 
-
 void main() {
     vec2 res = vec2(viewWidth, viewHeight);
     ivec2 px = ivec2(gl_FragCoord.xy);
     ivec2 maxPx = ivec2(res) - 1;
 
-    float depth = texelFetch(depthtex0, px, 0).r;
+    vec4 d = texelFetch(colortex7, px, 0);
     vec4 cur = texelFetch(colortex4, px, 0);
+    vec2 uv = (vec2(px) + 0.5) / res;
 
-    if (depth >= 1.0) {
-        outColor = cur;
-        imageStore(reflectionAccum, ivec2(gl_FragCoord.xy), vec4(cur.rgb, 0));
-        return;
-    }
+    #ifdef RTX_REFLECTIONS
+        // g == 0: sky, untraced, or water -> pass through, invalidate history
+        if (d.g < 0.5) {
+            outColor = cur;
+            imageStore(reflectionAccum, px, vec4(cur.rgb, 0));
+            return;
+        }
+        // virtual bounce position: along the camera ray at (primary + reflected) distance
+        vec3 viewDir = normalize(viewPosFrom(uv, 1.0));
+        vec3 viewPos = viewDir * (d.r * VIRT_MAX);
+    #else
+        if (d.r >= 1.0) {
+            outColor = cur;
+            imageStore(reflectionAccum, px, vec4(cur.rgb, 0));
+            return;
+        }
+        vec3 viewPos = viewPosFrom(uv, d.r);
+    #endif
 
     float roughness = cur.a;
     cur.rgb = min(cur.rgb, vec3(FIREFLY_MAX));
 
-    vec2 uv = (vec2(px) + 0.5) / res;
-    vec3 viewPos = viewPosFrom(uv, depth);
     vec3 worldPos = (gbufferModelViewInverse * vec4(viewPos, 1.0)).xyz + cameraPosition;
 
     vec3 prevView = (gbufferPreviousModelView * vec4(worldPos - previousCameraPosition, 1.0)).xyz;
@@ -77,7 +88,6 @@ void main() {
 
         vec4 h = texelFetch(reflectionAccumSampler, tp, 0);
         if (h.a <= 0.0) continue;
-
         if (abs(h.a - expectedDepth) > DEPTH_TOL * expectedDepth) continue;
 
         histSum += h.rgb * bw[i];
@@ -108,5 +118,5 @@ void main() {
     }
 
     outColor = vec4(result, roughness);
-    imageStore(reflectionAccum, ivec2(gl_FragCoord.xy), vec4(result, -viewPos.z));
+    imageStore(reflectionAccum, px, vec4(result, -viewPos.z));
 }

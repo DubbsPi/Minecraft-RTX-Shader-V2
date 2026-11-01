@@ -4,7 +4,7 @@
 uniform sampler2D colortex1;  // view space normal
 uniform sampler2D colortex4;  // reflections
 uniform sampler2D colortex6;  // translucent normal and material tag
-uniform sampler2D depthtex0;
+uniform sampler2D colortex7;  // reflection depth
 
 uniform mat4 gbufferProjectionInverse;
 uniform float viewWidth;
@@ -39,7 +39,7 @@ void main() {
     ivec2 px = ivec2(gl_FragCoord.xy);
     ivec2 maxPx = ivec2(viewWidth, viewHeight) - 1;
 
-    float cDepth = texelFetch(depthtex0, px, 0).r;
+    float cDepth = texelFetch(colortex7, px, 0).r;
     vec4 cSample = texelFetch(colortex4, px, 0);
     vec4 cWater = texelFetch(colortex6, px, 0);
     bool cIsWater = cWater.w >= 1.5;
@@ -60,7 +60,7 @@ void main() {
         for (int x = -2; x <= 2; x++) {
             ivec2 sp = clamp(px + ivec2(x, y) * stride, ivec2(0), maxPx);
 
-            float sDepth = texelFetch(depthtex0, sp, 0).r;
+            float sDepth = texelFetch(colortex7, sp, 0).r;
             if (sDepth >= 1.0) continue;
 
             vec4 sWater = texelFetch(colortex6, sp, 0);

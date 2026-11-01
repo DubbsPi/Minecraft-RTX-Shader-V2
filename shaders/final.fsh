@@ -56,7 +56,7 @@ void main() {
 
     #ifdef VERTEX_COUNT_DEBUG
     if (texcoord.y < 0.02) {
-        float triUsage = min(float(TriCounter.triCount) / float(MAX_TRIS), 1.0);
+        float triUsage = min(float(TriCounter.quadCount) / float(MAX_TRIS), 1.0);
         color = vec3(0.05);
 
         if (texcoord.x < triUsage) color = vec3(texcoord.x, 1.0 - texcoord.x, 0.0);

@@ -8,6 +8,7 @@
 const int colortex0Format = RGBA16F;  // Scene color
 const int colortex4Format = RGBA16F;  // Reflections
 const int colortex6Format = RGBA16F;  // Water normals
+const int colortex7Format = RG32F;    // Reflection depth
 */
 
 
@@ -174,10 +175,15 @@ const vec2 WATER_FINE_SCROLL = vec2(0.22, -0.30);
 
 
 // RTX features
-#define RTX_FEATURES  // with this off 530fps in sky noon no shadow gsh
+#define RTX_FEATURES
+#define RTX_REFLECTIONS
 #define MAX_TRIS 4194304 // [262144 589824 1048576 2359296 4194304]
-#define MAX_DIST 256.0 // [32.0 64.0 128.0 196.0 256.0 384.0]
-#define POS_BIAS (1 << 20)
+#define MAX_DIST 256.0 // [16.0 32.0 64.0 128.0 196.0 256.0 384.0 512.0]
+#define VIRT_MAX 2048.0
+
+uniform float far;
+#define ACTUAL_MAX_DIST min(MAX_DIST, far)
+const float voxelDistance = MAX_DIST;
 
 const float RAY_EPSILON = 1e-6;
 
