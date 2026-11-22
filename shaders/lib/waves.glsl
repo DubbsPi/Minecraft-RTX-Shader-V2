@@ -140,9 +140,7 @@ vec3 evaluateWaterDisplacement(in vec2 p, in float t) {
 
         float horizontal = w.q * A;
 
-        displacement.x += horizontal * w.dir.x * c;
         displacement.y += A * s;
-        displacement.z += horizontal * w.dir.y * c;
     }
 
     return displacement;

@@ -7,7 +7,10 @@ uniform sampler2D depthtex1;
 
 uniform mat4 gbufferProjection;
 uniform mat4 gbufferProjectionInverse;
+#ifndef CAMERA_POSITION_UNIFORM
+#define CAMERA_POSITION_UNIFORM
 uniform vec3 cameraPosition;
+#endif
 
 
 vec3 toView(in vec2 uv, in float depth) {
@@ -79,7 +82,7 @@ bool traceSSR(in vec3 P, in vec3 R, in float dither, out vec2 hitUV) {
                         float midInvW = mix(invW0, invW1, mid);
                         float midRayZ = mix(viewZOverW0, viewZOverW1, mid) / midInvW;
                         float midSceneD = texture(depthtex0, midUV).r;
-                        float midDiff = midSceneD < 1.0 ? viewZ(midSceneD) - midRayZ : -SSR_THICKNESS;
+                        float midDiff = midSceneD < 1.0? viewZ(midSceneD) - midRayZ : -SSR_THICKNESS;
                         if (midDiff > 0.0) hi = mid; else lo = mid;
                     }
                 }

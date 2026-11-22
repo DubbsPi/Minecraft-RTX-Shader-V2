@@ -6,6 +6,8 @@ uniform sampler2D colortex4;  // reflections
 uniform sampler2D colortex6;  // translucent normal and material tag
 uniform sampler2D colortex7;  // reflection depth
 
+uniform sampler2D depthtex0;
+
 uniform mat4 gbufferProjectionInverse;
 uniform float viewWidth;
 uniform float viewHeight;
@@ -45,7 +47,7 @@ void main() {
     bool cIsWater = cWater.w >= 1.5;
 
     float roughness = cSample.a;
-    if (cDepth >= 1.0 || (roughness < 0.04)) {outColor = cSample; return;}
+    if (cDepth >= 1.0) { outColor = cSample; return; }
 
     vec3 cN = cIsWater? normalize(cWater.xyz) : normalize(texture(colortex1, texcoord).xyz * 2.0 - 1.0);
     vec3 cPos = viewPosFrom(px, cDepth);

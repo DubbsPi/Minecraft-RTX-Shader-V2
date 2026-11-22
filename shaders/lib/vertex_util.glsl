@@ -5,10 +5,15 @@
 #include "settings.glsl"
 
 
-layout(std430, binding = 0) buffer Counters {uint quadCount; uint vertexCount;} TriCounter;
+layout(std430, binding = 0) buffer Counters {
+    uint quadCount;
+    uint vertexCount;
 
-layout(rg32ui, binding = 0) uniform uimage2D vertexPositions;
-layout(rg32ui, binding = 1) uniform uimage2D vertexAttributes;
+    uint textureHashes[1024];
+    ivec2 texSize[1024];
+} TriCounter;
+
+layout(std430, binding = 11) buffer EntitySlots { uint entitySlots[]; } Slots;
 
 
 const uint TRIS_PER_ROW = uint(MAX_VERTS_SQRT / 2);
@@ -36,38 +41,24 @@ vec3 unpackPos(in uvec2 d) {
 
 
 uvec2 packAttributes(in vec2 uv, in vec4 glColor) {
+    bool isEntity = uv.x < 0.0;
+    vec2 packedUv = isEntity ? uv - entityTexcoordOffset : uv;
+    uint packedU = uint(round(clamp(packedUv.x, 0.0, 1.0) * 32767.0));
+    if (isEntity) packedU |= 0x8000u;
+    uint packedV = uint(round(clamp(packedUv.y, 0.0, 1.0) * 65535.0));
+
     return uvec2(
-        packUnorm2x16(uv),
+        packedU | (packedV << 16u),
         packUnorm4x8(glColor)
     );
 }
 
 void unpackAttributes(in uvec2 data, out vec2 uv, out vec4 glColor) {
-    uv = unpackUnorm2x16(data.x);
+    bool isEntity = (data.x & 0x8000u) != 0u;
+    uv.x = float(data.x & 0x7fffu) / 32767.0;
+    uv.y = float(data.x >> 16u) / 65535.0;
+    if (isEntity) uv += entityTexcoordOffset;
     glColor = unpackUnorm4x8(data.y);
-}
-
-
-void getQuadPos(in uint idx, out vec3 v[4]) {
-    ivec2 base = ivec2(idx % TRIS_PER_ROW, idx / TRIS_PER_ROW) * 2;
-    v[0] = unpackPos(imageLoad(vertexPositions, base).xy);
-    v[1] = unpackPos(imageLoad(vertexPositions, base + ivec2(1, 0)).xy);
-    v[2] = unpackPos(imageLoad(vertexPositions, base + ivec2(0, 1)).xy);
-    v[3] = unpackPos(imageLoad(vertexPositions, base + ivec2(1, 1)).xy);
-}
-
-void getTriAttributes(in uint idx, in bool first, out vec2 uv[3], out vec4 glColor[3]) {
-    ivec2 base = ivec2(idx % TRIS_PER_ROW, idx / TRIS_PER_ROW) * 2;
-
-    if (first) {
-        unpackAttributes(imageLoad(vertexAttributes, base).xy, uv[0], glColor[0]);
-        unpackAttributes(imageLoad(vertexAttributes, base + ivec2(1, 0)).xy, uv[1], glColor[1]);
-        unpackAttributes(imageLoad(vertexAttributes, base + ivec2(0, 1)).xy, uv[2], glColor[2]);
-    } else {
-        unpackAttributes(imageLoad(vertexAttributes, base + ivec2(0, 1)).xy, uv[0], glColor[0]);
-        unpackAttributes(imageLoad(vertexAttributes, base + ivec2(1, 1)).xy, uv[1], glColor[1]);
-        unpackAttributes(imageLoad(vertexAttributes, base).xy, uv[2], glColor[2]);
-    }
 }
 
 

@@ -5,7 +5,6 @@
 
 
 uniform sampler2D colortex0;  // albedo
-uniform sampler2D colortex4;  // reflections
 uniform sampler2D depthtex0;
 uniform sampler2D taaTextureSampler;
 

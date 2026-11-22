@@ -6,12 +6,56 @@
 #include "pbr.glsl"
 #include "random.glsl"
 #include "shadow_util.glsl"
+#include "random.glsl"
+#include "rtx.glsl"
+
+
+vec3 jitterRaySun(in vec3 rd, inout uint rngState) {
+    const float maxAngleRad = radians(SUN_RADIUS_DEG);
+
+    float u1 = rand(rngState);
+    float u2 = rand(rngState);
+
+    const float cosAngle = mix(1.0, cos(maxAngleRad), u1);
+    const float sinAngle = sqrt(max(0.0, 1.0 - cosAngle * cosAngle));
+    float phi = TAU * u2;
+    
+    vec3 localDir = vec3(cos(phi) * sinAngle, sin(phi) * sinAngle, cosAngle);
+    vec3 up = abs(rd.y) < 0.999? vec3(0, 1, 0) : vec3(1, 0, 0);
+    vec3 tangent = normalize(cross(up, rd));
+    vec3 bitangent = cross(rd, tangent);
+    
+    return normalize(tangent * localDir.x + bitangent * localDir.y + rd * localDir.z);
+}
+
+vec3 getNormalShadows(in vec3 P, in vec3 N, inout uint rngState) {
+    vec3 shadow;
+    vec3 shadowWorldPos = (gbufferModelViewInverse * vec4(P, 1.0)).xyz;
+    #ifdef PIXELATED_SHADOWS
+        vec3 worldNormal = normalize(mat3(gbufferModelViewInverse) * N);
+        shadowWorldPos = snapToShadowGrid(shadowWorldPos, worldNormal);
+    #endif
+
+    vec3 shadowViewPos = (shadowModelView * vec4(shadowWorldPos, 1.0)).xyz;
+    vec3 shadowClipPos = projectAndDivide(shadowProjection, shadowViewPos);
+
+    bool inShadowMap = all(lessThan(abs(shadowClipPos.xy), vec2(0.95)));
+
+    shadowClipPos.z -= 0.001;  // Bias
+    if (inShadowMap) {
+        #ifdef VARIABLE_PENUMBRA_SHADOWS
+            shadow = getPCSSShadow(shadowClipPos, rand(rngState));
+        #else
+            shadow = getSoftShadow(shadowClipPos, FIXED_SHADOW_RADIUS, rand(rngState));
+        #endif
+    }
+    return shadow;
+}
 
 
 vec3 getLighting(
     in vec3 albedo, in vec3 N, in vec3 P,
-    in float depth, in vec2 lightmap,
-    in PBRMaterial mat,
+    in vec2 lightmap, in PBRMaterial mat,
     inout uint rngState,
     out vec4 reflectionWeight
  ) {
@@ -41,28 +85,18 @@ vec3 getLighting(
     vec3 lightEnergy = lightTransmittance * PI * skyLight * lightIntensity;
 
     // Shadow calculation
-    vec3 shadow = vec3(1.0);
-    vec3 shadowWorldPos = (gbufferModelViewInverse * vec4(P, 1.0)).xyz;
-    #ifdef PIXELATED_SHADOWS
-        vec3 worldNormal = normalize(mat3(gbufferModelViewInverse) * N);
+    vec3 shadow = vec3(1);
+    #ifndef RTX_SHADOWS
+        shadow = getNormalShadows(P, N, rngState);
+    #else
+        vec3 roW = (gbufferModelViewInverse * vec4(P + N * 0.01, 1)).xyz;
+        vec3 rdW = jitterRaySun(sunDirW, rngState);
 
-        bool isHand = depth < 0.56;
-        if (!isHand) shadowWorldPos = snapToShadowGrid(shadowWorldPos, worldNormal);
+        ivec2 px = ivec2(gl_FragCoord.xy);
+
+        bool occluded = rawNdotL < 0.0;
+        shadow = occluded? vec3(0) : bvhTintedShadow(roW, rdW, MAX_DIST);
     #endif
-
-    vec3 shadowViewPos = (shadowModelView * vec4(shadowWorldPos, 1.0)).xyz;
-    vec3 shadowClipPos = projectAndDivide(shadowProjection, shadowViewPos);
-
-    bool inShadowMap = all(lessThan(abs(shadowClipPos.xy), vec2(0.95)));
-
-    shadowClipPos.z -= 0.001;  // Bias
-    if (inShadowMap) {
-        #ifdef VARIABLE_PENUMBRA_SHADOWS
-            shadow = getPCSSShadow(shadowClipPos, rand(rngState));
-        #else
-            shadow = getSoftShadow(shadowClipPos, FIXED_SHADOW_RADIUS, rand(rngState));
-        #endif
-    }
 
 
     Lobes lobes = evalLobes(N, V, L, mat, albedo, F0);
@@ -104,8 +138,9 @@ vec3 getLighting(
 
     color = mix(color, fogColorLinear, fogAmount);
 
+    float reflectionMask = mat.roughness < SSR_MAX_ROUGHNESS ? 1.0 : 0.0;
     reflectionWeight = vec4(
-        clamp(envBRDF * (1.0 - fogAmount), 0.0, 1.0),
+        clamp(envBRDF * (1.0 - fogAmount) * reflectionMask, 0.0, 1.0),
         mat.roughness
     );
 

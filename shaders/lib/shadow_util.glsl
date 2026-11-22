@@ -14,7 +14,10 @@ uniform sampler2D shadowcolor0;
 
 uniform mat4 shadowProjection;
 
+#ifndef CAMERA_POSITION_UNIFORM
+#define CAMERA_POSITION_UNIFORM
 uniform vec3 cameraPosition;
+#endif
 
 
 vec3 distortShadowClipPos(in vec3 shadowClipPos){

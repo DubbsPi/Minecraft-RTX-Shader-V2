@@ -8,7 +8,6 @@
 #include "lib/sky.glsl"
 #include "lib/pbr.glsl"
 #include "lib/common.glsl"
-#include "lib/lighting.glsl"
 
 
 uniform sampler2D colortex0;  // opaque scene
@@ -16,18 +15,22 @@ uniform sampler2D colortex1;  // opaque normals
 uniform sampler2D colortex4;  // reflection weight
 uniform sampler2D colortex5;  // translucent tint
 uniform sampler2D colortex6;  // translucent normal
-uniform sampler2D colortex8;  // texture atlas
+//uniform sampler2D colortex8;  // texture atlas, defined in rtx.glsl
+uniform sampler2D colortex9;  // normal atlas
+uniform sampler2D colortex10; // specular atlas
 
 
 uniform mat4 gbufferModelViewInverse;
+uniform mat4 gbufferModelView;
+uniform mat4 shadowModelView;
+
+uniform vec3 fogColor;
+
 uniform vec3 sunPosition;
 uniform vec3 upPosition;
 uniform vec3 shadowLightPosition;
 
-uniform float viewHeight;
-uniform float viewWidth;
-
-uniform int frameCounter;
+#include "lib/lighting.glsl"
 
 
 in vec2 texcoord;
@@ -37,22 +40,15 @@ layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec4 relfDepth;
 
 
-//#define WATER_DEBUG 1
-
-
 void main() {
     uint rngState = randInt(uvec2(gl_FragCoord.xy), uvec2(viewWidth, viewHeight), uint(frameCounter));
-
+     
     vec4 nd = texture(colortex6, texcoord);
     bool translucent = dot(nd.xyz, nd.xyz) >= 0.25;
     float d0 = texture(depthtex0, texcoord).r;
     outColor = vec4(0);
 
-    #ifdef RTX_REFLECTIONS
-        relfDepth = vec4(1, 0, 0, 1);
-    #else
-        relfDepth = vec4(d0, 0, 0, 1);
-    #endif
+    relfDepth = vec4(1, 0, 0, 1);
 
     vec4 rw = vec4(0);
     if (!translucent) {
@@ -61,6 +57,7 @@ void main() {
             outColor = vec4(0, 0, 0, rw.a);
             return;
         }
+        relfDepth = vec4(d0, 0, 1, 1);
     }
 
     vec3 scene = vec3(0);
@@ -96,7 +93,7 @@ void main() {
     } else {
         N = normalize(texture(colortex1, texcoord).xyz * 2.0 - 1.0);
 
-        float alpha = max(rw.a * rw.a, 1e-3);
+        float alpha = max(rw.a * rw.a, 1e-6);
         vec3 up = abs(N.z) < 0.999? vec3(0, 0, 1) : vec3(1, 0, 0);
         vec3 T = normalize(cross(up, N));
         vec3 B = cross(N, T);
@@ -110,32 +107,72 @@ void main() {
     }
 
     vec3 refl = vec3(0);
-    #ifdef RTX_REFLECTIONS
-        bool outsideRTXRange = false;
+    bool outsideRTXRange = true;
 
+    #if defined RTX_REFLECTIONS && defined RTX_FEATURES
         if (doTrace) {
             vec3 roW = (gbufferModelViewInverse * vec4(P + N * 0.03, 1)).xyz;
             vec3 rdW = normalize(mat3(gbufferModelViewInverse) * R);
-            if (any(greaterThan(abs(roW), vec3(ACTUAL_MAX_DIST)))) outsideRTXRange = true;
-            else {
-                float tHit; vec2 hitUV;
-                uint triIdx; bool first;
-                bool hit = bruteForceTrace(roW, rdW, tHit, hitUV, triIdx, first);
+            if (all(lessThan(abs(roW), vec3(ACTUAL_MAX_DIST)))) {
+                float tExit = rayExitDist(roW, rdW, ACTUAL_MAX_DIST);
+                float tHit = MAX_DIST;
 
-                if (hit) {
-                    vec2 triUV[3]; vec4 triGlColor[3];
-                    getTriAttributes(triIdx, first, triUV, triGlColor);
+                if (tExit > 0.1) {
+                    outsideRTXRange = false;
 
-                    float w0 = 1.0 - hitUV.x - hitUV.y;
-                    vec2 hitTexcoord = triUV[0] * w0 + triUV[1] * hitUV.x + triUV[2] * hitUV.y;
-                    vec4 hitGlColor = triGlColor[0] * w0 + triGlColor[1] * hitUV.x + triGlColor[2] * hitUV.y;
+                    vec2 hitUV;
+                    uint triIdx; bool first; vec3 trans;
+                    bool hit = bvhTraceTinted(roW, rdW, tExit, tHit, hitUV, triIdx, first, trans);
 
-                    vec3 albedo = texture(colortex8, hitTexcoord).rgb;
-                    albedo = pow(max(albedo, vec3(0)), vec3(2.2));
+                    if (hit) {
+                        vec3 v[4];
+                        vec2 triUV[3]; vec4 triGlColor[3];
+                        getQuadPos(triIdx, v);
+                        getTriAttributes(triIdx, first, triUV, triGlColor);
 
-                    refl = albedo * hitGlColor.rgb;
+                        vec3 triPos[3] = first? vec3[](v[0], v[1], v[2]) : vec3[](v[2], v[3], v[0]);
+
+                        float w0 = 1.0 - hitUV.x - hitUV.y;
+                        vec2 hitTexcoord = triUV[0] * w0 + triUV[1] * hitUV.x + triUV[2] * hitUV.y;
+                        vec4 hitGlColor = triGlColor[0] * w0 + triGlColor[1] * hitUV.x + triGlColor[2] * hitUV.y;
+                        vec3 hitPosWorld = roW + rdW * tHit;
+
+                        vec3 albedo = sampleTracedTexture(hitTexcoord, triIdx);
+                        albedo *= hitGlColor.rgb;
+
+                        vec3 e1 = triPos[1] - triPos[0];
+                        vec3 e2 = triPos[2] - triPos[0];
+                        vec3 hitNormalWorld = normalize(cross(e1, e2));
+                        if (dot(hitNormalWorld, rdW) > 0.0) hitNormalWorld = -hitNormalWorld;
+                        vec3 hitNormalView = normalize(mat3(gbufferModelView) * hitNormalWorld);
+
+                        vec2 lightmap = vec2(0.5);
+                        PBRMaterial mat;
+                        if (hitTexcoord.x < 0.0) {
+                            mat.roughness = 1.0;
+                            mat.metallic = 0.0;
+                            mat.f0 = 0.04;
+                        } else {
+                            vec4 specular = textureLod(colortex10, hitTexcoord, 0.0);
+                            mat = getMaterial(vec4(pow(1.0 - specular.r, 2.0), specular.g, 0.0, 1.0));
+                        }
+
+                        vec3 viewPos = (gbufferModelView * vec4(hitPosWorld, 1)).xyz;
+                        vec4 reflWeight = vec4(0);
+                            
+                        refl = getLighting(
+                            albedo, hitNormalView, viewPos,
+                            lightmap, mat, rngState,
+                            reflWeight
+                        ) * trans;
+
+                        float virtDist = min(length(P) + tHit, VIRT_MAX);
+                        relfDepth = vec4(virtDist / VIRT_MAX, translucent ? 0.0 : 1.0, 0, 1);
+                    } else {
+                        vec3 spaceDir = moonRelativeDirection(rdW);
+                        refl = sampleSky(rdW, spaceDir, scene, true);
+                    }
                 } else {
-                    tHit = MAX_DIST;
                     vec3 spaceDir = moonRelativeDirection(rdW);
                     refl = sampleSky(rdW, spaceDir, scene, true);
                 }
@@ -149,8 +186,6 @@ void main() {
             outColor = vec4(refl * rw.rgb, rw.a);
             return;
         }
-    #else
-        bool outsideRTXRange = true;
     #endif
     
     if (outsideRTXRange) {
@@ -179,16 +214,20 @@ void main() {
 
 
     bool isWater = nd.w >= 1.5;
+    bool waterViewedFromBelow = isWater && dot(N, V) < 0.0;
     float skyL = isWater ? nd.w - 2.0 : nd.w;
-    float NdotV = max(dot(N, V), 1e-3);
+    float NdotV = max(abs(dot(N, V)), 1e-3);
 
 
     float day = smoothstep(-0.1, 0.25, dot(normalize(sunPosition), normalize(upPosition)));
 
     // Refraction
     float t0 = (d1 >= 1.0) ? 32.0 : distance(P, toView(texcoord, d1));
-    float ior = isWater ? 1.0 / WATER_IOR : 1.0 / 1.5;
-    vec3 Rr = refract(-V, N, ior);
+    float ior = isWater
+        ? (waterViewedFromBelow? WATER_IOR : 1.0 / WATER_IOR)
+        : 1.0 / 1.5;
+    vec3 refractionNormal = waterViewedFromBelow ? -N : N;
+    vec3 Rr = refract(-V, refractionNormal, ior);
 
     vec2 uvR = texcoord;
     if (dot(Rr, Rr) > 0.0) {
@@ -202,7 +241,7 @@ void main() {
     vec3 behind = texture(colortex0, uvR).rgb;
 
     // Transmission
-    vec3 tint = tr.a > 0.001 ? pow(tr.rgb / tr.a, vec3(2.2)) : vec3(1.0);
+    vec3 tint = tr.a > 0.001 ? pow(tr.rgb / tr.a, vec3(2.2)) : vec3(1);
     vec3 transmitted;
     if (isWater) {
         vec3 sigma = (vec3(1.0) - tint) * WATER_DENSITY;

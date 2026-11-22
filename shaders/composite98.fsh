@@ -17,7 +17,7 @@ void main() {
     vec3 layer = texture(colortex4, texcoord).rgb;
     vec3 translucentNormal = texture(colortex6, texcoord).xyz;
     bool hasTranslucentLayer = dot(translucentNormal, translucentNormal) >= 0.25;
-    vec3 color = hasTranslucentLayer ? layer : scene + layer;
+    vec3 color = hasTranslucentLayer? layer : scene + layer;
 
     outColor = vec4(color, 1);
 }

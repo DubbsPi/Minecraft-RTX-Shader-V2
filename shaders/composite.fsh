@@ -68,9 +68,9 @@ void main() {
         vec2 lightmap = texture(colortex2, texcoord).xy;
 
         PBRMaterial mat = getMaterial(texture(colortex3, texcoord));
-
+        
         color = getLighting(
-            albedo, N, viewPos, depth,
+            albedo, N, viewPos,
             lightmap, mat, rngState,
             reflWeight
         );
