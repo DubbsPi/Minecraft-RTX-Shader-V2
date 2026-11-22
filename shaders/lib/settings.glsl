@@ -188,18 +188,10 @@ const vec2 WATER_FINE_SCROLL = vec2(0.22, -0.30);
     #define BVH_DELAY_FRAMES 96 // [0 64 96 128 256]
     #define RT_ALPHA_CUTOFF 0.025
 
-    #ifndef RT_OPAQUE_ALPHA
     #define RT_OPAQUE_ALPHA 0.98
-    #endif
-    #ifndef RT_TINT_EPS
     #define RT_TINT_EPS 0.002
-    #endif
-    #ifndef RT_TINT_MIN_ENERGY
     #define RT_TINT_MIN_ENERGY 0.004
-    #endif
-    #ifndef MAX_TINT_LAYERS
     #define MAX_TINT_LAYERS 8
-    #endif
     
 
     uniform float far;
@@ -209,6 +201,10 @@ const vec2 WATER_FINE_SCROLL = vec2(0.22, -0.30);
     
     const float RAY_EPSILON = 1e-6;
     
+
+    #define RTX_SHADOWS
+    #ifdef RTX_SHADOWS
+    #endif
 
     #define TRACE_WATER
     #ifdef TRACE_WATER

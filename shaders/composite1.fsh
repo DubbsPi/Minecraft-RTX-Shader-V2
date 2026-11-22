@@ -3,11 +3,14 @@
 #include "lib/settings.glsl"
 #include "lib/random.glsl"
 #include "lib/ssr.glsl"
-#include "lib/vertex_util.glsl"
-#include "lib/rtx.glsl"
 #include "lib/sky.glsl"
 #include "lib/pbr.glsl"
 #include "lib/common.glsl"
+
+#ifdef RTX_FEATURES
+#include "lib/vertex_util.glsl"
+#include "lib/rtx.glsl"
+#endif
 
 
 uniform sampler2D colortex0;  // opaque scene
@@ -29,6 +32,11 @@ uniform vec3 fogColor;
 uniform vec3 sunPosition;
 uniform vec3 upPosition;
 uniform vec3 shadowLightPosition;
+
+uniform float viewHeight;
+uniform float viewWidth;
+uniform int frameCounter;
+
 
 #include "lib/lighting.glsl"
 

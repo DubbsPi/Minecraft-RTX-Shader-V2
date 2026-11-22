@@ -1,6 +1,8 @@
 #ifndef INCLUDE_RTX
 #define INCLUDE_RTX
 
+#ifdef RTX_FEATURES
+
 
 #define BVH_TRACE_ONLY
 #include "bvh_util.glsl"
@@ -533,4 +535,5 @@ vec3 bvhTintedShadow(in vec3 ro, in vec3 rd, in float tMax) {
 }
 
 
+#endif
 #endif

@@ -86,9 +86,7 @@ vec3 getLighting(
 
     // Shadow calculation
     vec3 shadow = vec3(1);
-    #ifndef RTX_SHADOWS
-        shadow = getNormalShadows(P, N, rngState);
-    #else
+    #if defined RTX_SHADOWS && #defined RTX_FEATURES
         vec3 roW = (gbufferModelViewInverse * vec4(P + N * 0.01, 1)).xyz;
         vec3 rdW = jitterRaySun(sunDirW, rngState);
 
@@ -96,6 +94,8 @@ vec3 getLighting(
 
         bool occluded = rawNdotL < 0.0;
         shadow = occluded? vec3(0) : bvhTintedShadow(roW, rdW, MAX_DIST);
+    #else
+        shadow = getNormalShadows(P, N, rngState);
     #endif
 
 
