@@ -9,9 +9,20 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 const ivec3 workGroups = ivec3(1, 1, 1);
 
 
+uniform vec3 cameraPosition;
+
+
 void main() {
-    if (gl_LocalInvocationIndex == 0) {
+    uint i = gl_LocalInvocationIndex;
+
+    if (i == 0) {
         TriCounter.quadCount = 0u;
         TriCounter.vertexCount = 0u;
+        TriCounter.rebuildFlag = 1u;
+
+        if (TriCounter.rebuildFlag == 1u)
+            TriCounter.buildCameraPosition = cameraPosition;
     }
+
+    if (i < 64) TriCounter.vertexHash[i] = 0u;
 }

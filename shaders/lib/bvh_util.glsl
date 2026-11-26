@@ -50,6 +50,7 @@ uint morton3D(in vec3 n) {
 }
 
 
+#ifndef DONT_INLCUDE_READONLY_VERTS
 void getQuadPos(in uint idx, out vec3 v[4]) {
     ivec2 base = ivec2(idx % TRIS_PER_ROW, idx / TRIS_PER_ROW) * 2;
     v[0] = unpackPos(imageLoad(vertexPositions, base).xy);
@@ -65,6 +66,7 @@ void quadBounds(uint q, out vec3 mn, out vec3 mx) {
     mn = min(min(v[0], v[1]), min(v[2], v[3])) - 0.002;
     mx = max(max(v[0], v[1]), max(v[2], v[3])) + 0.002;
 }
+#endif
 
 
 #endif

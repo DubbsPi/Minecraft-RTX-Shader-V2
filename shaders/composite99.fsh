@@ -53,7 +53,6 @@ void main() {
 
     vec3 cur = compress(texelFetch(colortex0, px, 0).rgb);
 
-
     vec3 m1 = vec3(0), m2 = vec3(0), mn = vec3(1e9), mx = vec3(-1e9);
     for (int y = -1; y <= 1; y++) {
         for (int x = -1; x <= 1; x++) {
@@ -69,7 +68,7 @@ void main() {
     vec3 hi = min(mx, mean + VARIANCE_GAMMA * sigma);
 
     bool isHand = depth < 0.56;
-    vec2 prevUV = isHand ? texcoord : reproject(texcoord, depth);
+    vec2 prevUV = isHand? texcoord : reproject(texcoord, depth);
 
     bool valid = frameCounter > 0 && all(greaterThanEqual(prevUV, vec2(0))) && all(lessThan(prevUV, vec2(1)));
 

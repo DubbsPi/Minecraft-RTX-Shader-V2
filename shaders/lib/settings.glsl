@@ -20,7 +20,7 @@ const float BASE_BLEND = 0.15;
 
 // Shadows
 #define SHADOW_MAP_RESOLUTION 2048 // [512 1024 2048 4096 8192]
-const int shadowMapResolution = SHADOW_MAP_RESOLUTION;
+const float shadowIntervalSize = 1.0;
 
 #define SHADOW_SAMPLES 8 // [4 6 8 16 32]
 #define PCSS_BLOCKER_SAMPLES 8 // [4 6 8 10]
@@ -30,7 +30,7 @@ const float MIN_RADIUS_BLOCKS = 0.005;
 const float MAX_RADIUS_BLOCKS = 2.0;
 const float SEARCH_RADIUS_BLOCKS = 0.8;
 
-#define PIXELATED_SHADOWS
+//#define PIXELATED_SHADOWS
 #define SHADOW_PIXELS_PER_BLOCK 16 // [4 8 16 32]
 
 #define VARIABLE_PENUMBRA_SHADOWS
@@ -133,7 +133,7 @@ const float sunPathRotation = SUN_PATH_ROTATION;
 #define WATER_DENSITY 0.15
 #define WATER_ROUGHNESS 0.03
 #define WATER_IOR 1.33
-#define WATER_REFLECTION_STRENGTH 3.0 // [1.0 1.5 2.0 2.5 3.0 4.0]
+#define WATER_REFLECTION_STRENGTH 2.0 // [1.0 1.5 2.0 2.5 3.0 4.0]
 
 #define WATER_DEBUG 0 // [0 1 2 3 4 5 6]
 
@@ -181,6 +181,14 @@ const vec2 WATER_FINE_SCROLL = vec2(0.22, -0.30);
     #define RTX_REFLECTIONS
     #define RTX_SHADOWS
 
+    #define SHADOW_SAMPLES 1 // [1 2 3 4 6 8 10 12 16]
+    //#define RTX_SHADOW_CULLING
+    #define CULL_TAP_RADIUS 2
+    
+    //#define FORCE_NO_SUBGROUPS
+    #ifdef FORCE_NO_SUBGROUPS
+    #endif
+
     #define MAX_QUADS 2359296 // [262144 589824 1048576 2359296 4194304]
     #define MAX_DIST 128.0 // [16.0 32.0 64.0 128.0 196.0 256.0 384.0]
     #define VIRT_MAX 2048.0
@@ -198,23 +206,13 @@ const vec2 WATER_FINE_SCROLL = vec2(0.22, -0.30);
     #define ACTUAL_MAX_DIST min(MAX_DIST, far)
     const float shadowDistance = MAX_DIST;
     const float shadowDistanceRenderMul = 1.0;
-    
+
     const float RAY_EPSILON = 1e-6;
     
 
-    #define RTX_SHADOWS
-    #ifdef RTX_SHADOWS
-    #endif
-
     #define TRACE_WATER
-    #ifdef TRACE_WATER
-    #endif
-
     #define TRACE_ENTITIES
     const vec2 entityTexcoordOffset = vec2(-1.1);
-
-    #ifdef TRACE_ENTITIES
-    #endif
 
     #define ENTITY_ATLAS_SLOT_SIZE 128
     #define ENTITY_ATLAS_SIZE 4096
@@ -246,6 +244,18 @@ const vec2 WATER_FINE_SCROLL = vec2(0.22, -0.30);
     #endif
 
     #if MAX_QUADS == 4194304
+        #define MAX_QUADS_OVER_64 65536
+    #elif MAX_QUADS == 2359296
+        #define MAX_QUADS_OVER_64 32768
+    #elif MAX_QUADS == 1048576
+        #define MAX_QUADS_OVER_64 16384
+    #elif MAX_QUADS == 589824
+        #define MAX_QUADS_OVER_64 8192
+    #elif MAX_QUADS == 262144
+        #define MAX_QUADS_OVER_64 4096
+    #endif
+
+    #if MAX_QUADS == 4194304
         #define MAX_QUADS_OVER_4096 1024
     #elif MAX_QUADS == 2359296
         #define MAX_QUADS_OVER_4096 512
@@ -263,6 +273,22 @@ const vec2 WATER_FINE_SCROLL = vec2(0.22, -0.30);
     //#define BVH_DEBUG
     #define TRACE_DEBUG 0 // [0 1 2]
     //#define ENTITY_ATLAS_DEBUG
+    //#define VERTEX_HASH_DEBUG
+    //#define DEBUG_RT_CULL
+#endif
+
+#ifdef TRACE_WATER
+#endif
+#ifdef TRACE_ENTITIES
+#endif
+
+
+#if defined RTX_SHADOWS && defined RTX_SHADOW_CULLING
+    const int shadowMapResolution = 2048;
+#elif defined RTX_SHADOWS
+    const int shadowMapResolution = 1;
+#else
+    const int shadowMapResolution = SHADOW_MAP_RESOLUTION;
 #endif
 
 

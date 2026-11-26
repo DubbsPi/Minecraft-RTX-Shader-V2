@@ -1,11 +1,20 @@
 #version 430 compatibility
 
+#extension GL_KHR_shader_subgroup_basic : enable
+#extension GL_KHR_shader_subgroup_ballot : enable
+#extension GL_KHR_shader_subgroup_shuffle : enable
+
 #include "lib/settings.glsl"
 #include "lib/shadow_util.glsl"
 #include "lib/vertex_util.glsl"
 
 #define DONT_INLCUDE_READONLY_VERTS
 #include "lib/bvh_util.glsl"
+
+
+#if defined(GL_KHR_shader_subgroup_basic) && defined(GL_KHR_shader_subgroup_ballot) && defined(GL_KHR_shader_subgroup_shuffle) && !defined(FORCE_NO_SUBGROUPS)
+    #define USE_SUBGROUPS
+#endif
 
 
 #ifdef RTX_FEATURES
@@ -21,8 +30,6 @@ uniform sampler2D gtexture;
 
 uniform mat4 shadowProjectionInverse;
 uniform mat4 shadowModelViewInverse;
-
-uniform int frameCounter;
 
 
 in vec3 mc_Entity;
@@ -93,13 +100,18 @@ void main() {
     gl_Position.xyz = distortShadowClipPos(gl_Position.xyz);
 
     #if defined RTX_FEATURES && defined TRACE_ENTITIES
-        if (frameCounter < BVH_DELAY_FRAMES) return;
+        bool valid = frameCounter >= BVH_DELAY_FRAMES;
 
-        vec3 shadowViewPos = (shadowProjectionInverse * rawShadowClipPos).xyz;
-        vec3 feetPos = (shadowModelViewInverse * vec4(shadowViewPos, 1.0)).xyz;
+        vec3 feetPos = vec3(0);
+        if (valid) {
+            vec3 shadowViewPos = (shadowProjectionInverse * rawShadowClipPos).xyz;
+            feetPos = (shadowModelViewInverse * vec4(shadowViewPos, 1)).xyz;
+
+            // Not yet for this...
+            //atomicAdd(TriCounter.vertexHash[gl_VertexID & 63], hashVertex(feetPos));
+        }
 
         #define ENTITY_WRITE
-        #include "/lib/vertex_write.glsl"
-        Slots.entitySlots[quadID] = assignedSlot;
+        #include "lib/vertex_write.glsl"
     #endif
 }

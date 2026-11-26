@@ -1,137 +1,147 @@
 #version 430 compatibility
 
-#include "lib/settings.glsl"
+#include "/lib/denoise.glsl"
+#include "/lib/settings.glsl"
 
 
-#define DEPTH_TOL 0.05
-#define FIREFLY_MAX 8.0
-#define ALPHA_MIRROR 0.6
-#define ALPHA_ROUGH 0.0000001
+layout(rgba16f) uniform image2D reflAccum0;
+layout(rgba16f) uniform image2D reflAccum1;
+layout(rgba16f) uniform image2D reflAux0;
+layout(rgba16f) uniform image2D reflAux1;
 
-uniform sampler2D colortex4;  // reflections
-uniform sampler2D colortex7;  // r: depth or virtual dist, g: virtual flag, b: surface flag
-uniform sampler2D reflectionAccumSampler;
-
-uniform sampler2D depthtex0;
-
-
-uniform mat4 gbufferProjectionInverse;
-uniform mat4 gbufferModelViewInverse;
-uniform mat4 gbufferPreviousModelView;
-uniform mat4 gbufferPreviousProjection;
-
-uniform vec3 cameraPosition;
-uniform vec3 previousCameraPosition;
-uniform float viewWidth;
-uniform float viewHeight;
 
 in vec2 texcoord;
 
-
 /* RENDERTARGETS: 4 */
-layout(location = 0) out vec4 outColor;
-
-layout(rgba16f) uniform image2D reflectionAccum;
+layout(location = 0) out vec4 outRefl;
 
 
-vec3 viewPosFrom(vec2 uv, float depth) {
-    vec4 p = gbufferProjectionInverse * vec4(vec3(uv, depth) * 2.0 - 1.0, 1.0);
-    return p.xyz / p.w;
+bool odd() {
+    return (frameCounter & 1) == 1;
+}
+
+vec4 loadAccum(in ivec2 p) {
+    return odd()? imageLoad(reflAccum1, p) : imageLoad(reflAccum0, p);
+}
+
+vec4 loadAux(in ivec2 p) {
+    return odd()? imageLoad(reflAux1, p)   : imageLoad(reflAux0, p);
+}
+
+
+void storeBoth(in ivec2 p, vec4 acc, vec4 aux) {
+    if (odd()) { imageStore(reflAccum0, p, acc); imageStore(reflAux0, p, aux); }
+    else { imageStore(reflAccum1, p, acc); imageStore(reflAux1, p, aux); }
+}
+
+vec2 projectPrev(in vec3 pv) {
+    vec4 c = gbufferPreviousProjection * vec4(pv, 1.0);
+    return c.xy / c.w * 0.5 + 0.5;
+}
+
+bool validTap(in vec4 aux, in ivec2 q, in vec3 nW, in vec3 prevTrackView, in bool virtualTrack) {
+    if (virtualTrack) {
+        float expectedDepth = -prevTrackView.z;
+        return expectedDepth > 0.0 && abs(aux.r - expectedDepth) < 0.03 * expectedDepth + 0.05;
+    }
+
+    if (dot(octDecode(aux.gb), nW) < 0.9) return false;
+
+    vec3 nPV = mat3(gbufferPreviousModelView) * nW;
+    vec3 rd = normalize(getViewPos((vec2(q) + 0.5) / viewSize, 0.5));
+
+    float denom = dot(nPV, rd);
+    if (abs(denom) < 1e-3) return false;
+
+    float t = dot(nPV, prevTrackView) / denom;
+    return t > 0.0 && abs(aux.r - t) < 0.03 * t + 0.05;
 }
 
 
 void main() {
-    vec2 res = vec2(viewWidth, viewHeight);
     ivec2 px = ivec2(gl_FragCoord.xy);
-    ivec2 maxPx = ivec2(res) - 1;
-    vec2 uv = (vec2(px) + 0.5) / res;
+    vec4 raw = texelFetch(colortex4, px, 0);
+    float depth = getDenoiseDepth(px);
+    vec4 info = texelFetch(colortex7, px, 0);
 
-    vec4 d = texelFetch(colortex7, px, 0);
-    vec4 cur = texelFetch(colortex4, px, 0);
-    float roughness = cur.a;
-    float d0 = texelFetch(depthtex0, px, 0).r;
+    float rough = getDenoiseRoughness(px);
 
-    vec3 surfPos = viewPosFrom(uv, d0);
-    vec3 trackPos = surfPos;
-    bool valid = d0 < 1.0;
-
-    #ifdef RTX_REFLECTIONS
-        if (d.g > 0.5) {
-            vec3 viewDir = normalize(viewPosFrom(uv, 1));
-            vec3 virtPos = viewDir * (d.r * VIRT_MAX);
-            trackPos = mix(virtPos, surfPos, smoothstep(0.05, 0.35, roughness));
-        } else {
-            valid = valid && d.b > 0.5;
-        }
-    #else
-        valid = valid && d.r < 1.0;
-    #endif
-
-    if (!valid) {
-        outColor = cur;
-        imageStore(reflectionAccum, px, vec4(cur.rgb, 0));
+    if (depth >= 1.0 || rough < 0.01) {
+        outRefl = vec4(raw.rgb, 0.0);
+        storeBoth(px, vec4(raw.rgb, 1), vec4(0));
         return;
     }
 
-    cur.rgb = min(cur.rgb, vec3(FIREFLY_MAX));
+    vec3 vp = getViewPos(texcoord, depth);
+    float dist = length(vp);
+    vec3 nW = mat3(gbufferModelViewInverse) * getDenoiseNormal(px);
+    bool virtualTrack = info.g > 0.5;
+    float virtualDist = max(info.r * VIRT_MAX, dist);
+    vec3 virtualPos = normalize(vp) * virtualDist;
+    vec3 trackPos = virtualTrack
+        ? mix(virtualPos, vp, smoothstep(0.1, 0.4, rough))
+        : vp;
+    vec3 trackRel = (gbufferModelViewInverse * vec4(trackPos, 1.0)).xyz;
+    vec3 camDelta = cameraPosition - previousCameraPosition;
 
-    // Reproject
-    vec3 worldPos = (gbufferModelViewInverse * vec4(trackPos, 1.0)).xyz + cameraPosition;
-    vec3 prevView = (gbufferPreviousModelView * vec4(worldPos - previousCameraPosition, 1.0)).xyz;
-    vec4 prevClip = gbufferPreviousProjection * vec4(prevView, 1.0);
-    vec2 prevUV = prevClip.xy / prevClip.w * 0.5 + 0.5;
-    float expectedDepth = -prevView.z;
+    vec3 prevTrackView = (gbufferPreviousModelView * vec4(trackRel + camDelta, 1.0)).xyz;
+    vec2 prevUV = projectPrev(prevTrackView);
 
-    vec2 prevPx = prevUV * res - 0.5;
-    ivec2 base = ivec2(floor(prevPx));
-    vec2 f = fract(prevPx);
-    float bw[4] = float[](
-        (1.0 - f.x) * (1.0 - f.y), f.x * (1.0 - f.y),
-        (1.0 - f.x) * f.y, f.x * f.y
-    );
+    vec3 m1 = vec3(0), m2 = vec3(0);
+    float sl = 0.0, sl2 = 0.0;
+    for (int y = -1; y <= 1; y++)
+    for (int x = -1; x <= 1; x++) {
+        ivec2 q = clamp(px + ivec2(x, y), ivec2(0), ivec2(viewSize) - 1);
+        vec3 c = texelFetch(colortex4, q, 0).rgb;
+        float l = luma(c);
+        m1 += c; m2 += c * c; sl += l; sl2 += l * l;
+    }
+    const float oneOverNine = 1.0 / 9.0;
+    m1 *= oneOverNine; m2 /= oneOverNine;
+    vec3 sigma = sqrt(max(m2 - m1 * m1, 0.0));
+    float varSpatial = max(sl2 * oneOverNine - (sl * oneOverNine) * (sl * oneOverNine), 0.0);
 
-    vec3 histSum = vec3(0);
-    float histW = 0.0;
-
+    vec2 pf = prevUV * viewSize - 0.5;
+    ivec2 p0 = ivec2(floor(pf));
+    vec2 f = fract(pf);
+    vec4 hist = vec4(0);
+    float histM2 = 0.0, wsum = 0.0;
     for (int i = 0; i < 4; i++) {
-        ivec2 tp = base + ivec2(i & 1, i >> 1);
-        if (any(lessThan(tp, ivec2(0))) || any(greaterThan(tp, maxPx))) continue;
+        ivec2 q = p0 + ivec2(i & 1, i >> 1);
+        if (any(lessThan(q, ivec2(0))) || any(greaterThanEqual(q, ivec2(viewSize)))) continue;
+        float bw = ((i & 1) == 1? f.x : 1.0 - f.x) * ((i >> 1) == 1? f.y : 1.0 - f.y);
+        vec4 aux = loadAux(q);
 
-        vec4 h = texelFetch(reflectionAccumSampler, tp, 0);
-        if (h.a <= 0.0) continue;
-        if (abs(h.a - expectedDepth) > DEPTH_TOL * expectedDepth) continue;
-
-        histSum += h.rgb * bw[i];
-        histW += bw[i];
+        if (!validTap(aux, q, nW, prevTrackView, virtualTrack)) continue;
+        hist += loadAccum(q) * bw;
+        histM2 += aux.a * bw;
+        wsum += bw;
     }
 
-    vec3 result = cur.rgb;
+    float len = 1.0;
+    vec3 result = raw.rgb;
+    float m2New = dot(raw.rgb, vec3(0.2126, 0.7152, 0.0722));
+    m2New *= m2New;
 
-    if (histW > 0.01) {
-        vec3 hist = histSum / histW;
+    if (wsum > 1e-3) {
+        hist /= wsum; histM2 /= wsum;
+        float maxLen = mix(1.0, 128.0, smoothstep(0.0, 0.5, rough));
+        len = min(hist.a + 1.0, maxLen);
+        float alpha = 1.0 / len;
 
-        // Neighborhood clamp
-        vec3 m1 = vec3(0), m2 = vec3(0);
-        for (int y = -1; y <= 1; y++) {
-            for (int x = -1; x <= 1; x++) {
-                vec3 c = min(
-                    texelFetch(colortex4, clamp(px + ivec2(x, y), ivec2(0), maxPx), 0).rgb,
-                    vec3(FIREFLY_MAX)
-                );
-                m1 += c;
-                m2 += c * c;
-            }
-        }
-        vec3 mean = m1 / 9.0;
-        vec3 sigma = sqrt(max(m2 / 9.0 - mean * mean, 0.0));
-        float gamma = mix(2.0, 6.0, smoothstep(0.0, 0.5, roughness));
-        hist = clamp(hist, mean - gamma * sigma, mean + gamma * sigma);
+        float gamma = mix(1.0, 2.0, rough);
+        vec3 histC = clamp(hist.rgb, m1 - gamma * sigma, m1 + gamma * sigma);
 
-        float baseAlpha = mix(ALPHA_MIRROR, ALPHA_ROUGH, smoothstep(0.0, 0.5, roughness));
-        float alpha = mix(0.1, baseAlpha, histW);
-        result = mix(hist, cur.rgb, alpha * 0.00001);
+        result = mix(histC, raw.rgb, alpha);
+        float lr = luma(raw.rgb);
+        m2New = mix(histM2, lr * lr, alpha);
     }
 
-    outColor = vec4(result, roughness);
-    imageStore(reflectionAccum, px, vec4(result, -trackPos.z));
+    float mean = luma(result);
+    float varTemporal = max(m2New - mean * mean, 0.0);
+    float variance = mix(varSpatial, varTemporal, clamp((len - 1.0) * 0.333333, 0.0, 1.0));
+
+    float trackDepth = virtualTrack? -trackPos.z : dist;
+    storeBoth(px, vec4(result, len), vec4(trackDepth, octEncode(nW), m2New));
+    outRefl = vec4(result, variance);
 }

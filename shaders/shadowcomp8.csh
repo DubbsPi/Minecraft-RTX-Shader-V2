@@ -2,10 +2,10 @@
 
 #include "lib/settings.glsl"
 
-layout(local_size_x = 1024) in;
-const ivec3 workGroups = ivec3(1, 1, 1);
+layout(local_size_x = 256) in;
+const ivec3 workGroups = ivec3(MAX_QUADS_OVER_4096, 1, 1);
 
 #define SORT_PASS 2
-#define SORT_STAGE 1
+#define SORT_STAGE 0
 
 #include "lib/radix_sort.glsl"

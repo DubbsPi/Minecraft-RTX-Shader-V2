@@ -2,6 +2,9 @@
 
 #include "lib/settings.glsl"
 
+#ifdef VERTEX_HASH_DEBUG
+    #include "lib/vertex_util.glsl"
+#endif
 #ifdef VERTEX_COUNT_DEBUG
     #include "lib/vertex_util.glsl"
     uniform float viewWidth;
@@ -220,23 +223,34 @@ void main() {
 
         if (((px.x | px.y) & 7u) == 0u) {
             if (TriCounter.quadCount > uint(MAX_BRUTE_FORCE_TESTS)) {
-                color.rgb = vec3(0.0, 1.0, 1.0);
+                color.rgb = vec3(0, 1, 1);
             } else {
                 vec3 rd = primaryRayDir(texcoord);
                 float tB, tR; vec2 uvB, uvR; uint iB, iR; bool fB, fR;
-                bool hB = bvhTrace(vec3(0.0), rd, tB, uvB, iB, fB);
-                bool hR = bruteForceTrace(vec3(0.0), rd, tR, uvR, iR, fR);
+                bool hB = bvhTrace(vec3(0), rd, tB, uvB, iB, fB);
+                bool hR = bruteForceTrace(vec3(0), rd, tR, uvR, iR, fR);
 
                 bool agree = (hB == hR) && (!hB || iB == iR || abs(tB - tR) < 1e-3);
-                color.rgb = agree? vec3(0.0, 1.0, 0.0)
-                    : (hR && !hB)? vec3(1.0, 0.0, 0.0)
-                    : (hB && !hR)? vec3(0.0, 0.3, 1.0)
-                    :              vec3(1.0, 1.0, 0.0);
+                color.rgb = agree? vec3(0, 1, 0)
+                    : (hR && !hB)? vec3(1, 0, 0)
+                    : (hB && !hR)? vec3(0, 0.3, 1)
+                    :              vec3(1, 1, 0);
             }
         }
     #endif
     #ifdef ENTITY_ATLAS_DEBUG
         color = texture(entityAtlasSampler, texcoord).rgb;
+    #endif
+
+    #ifdef VERTEX_HASH_DEBUG
+        uint pixelY = uint(gl_FragCoord.y);
+        uint debugHeight = max(uint(viewHeight * 0.1), 64u);
+        if (pixelY < debugHeight) {
+            uint bucket = min(pixelY * 64u / debugHeight, 63u);
+            color = unpackUnorm4x8(TriCounter.vertexHash[bucket]).rgb;
+
+            if (pixelY == 0u || bucket != ((pixelY - 1u) * 64u / debugHeight)) color *= 0.35;
+        }
     #endif
     
     outColor = vec4(color, 1);

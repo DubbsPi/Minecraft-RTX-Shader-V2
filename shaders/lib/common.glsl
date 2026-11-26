@@ -32,4 +32,13 @@ vec3 projectAndDivide(in mat4 projectionMatrix, in vec3 position){
 }
 
 
+vec3 getNormal(in ivec2 px) {
+    return normalize(texelFetch(colortex1, px, 0).xyz * 2.0 - 1.0);
+}
+
+float getRoughness(in ivec2 px) {
+    return sqrt(texelFetch(colortex3, px, 0).r);
+}
+
+
 #endif

@@ -13,19 +13,24 @@ uniform sampler2D shadowtex1;
 uniform sampler2D shadowcolor0;
 
 uniform mat4 shadowProjection;
-
-#ifndef CAMERA_POSITION_UNIFORM
-#define CAMERA_POSITION_UNIFORM
 uniform vec3 cameraPosition;
+
+
+#ifdef RTX_SHADOW_CULLING
+    #define SHADOW_Z_SCALE 1.0
+#else
+    #define SHADOW_Z_SCALE 0.5
 #endif
 
 
 vec3 distortShadowClipPos(in vec3 shadowClipPos){
-    float distortionFactor = length(shadowClipPos.xy);
-    distortionFactor += 0.1;
+    #ifndef RTX_SHADOW_CULLING
+        float distortionFactor = length(shadowClipPos.xy);
+        distortionFactor += 0.1;
 
-    shadowClipPos.xy /= distortionFactor;
-    shadowClipPos.z *= 0.5;
+        shadowClipPos.xy /= distortionFactor;
+        shadowClipPos.z *= 0.5;
+    #endif
     return shadowClipPos;
 }
 
@@ -99,7 +104,7 @@ float findBlockerDistance(in vec3 shadowClipPos, in float phi) {
     if (count == 0.0) return -1.0;
 
     float blockerClipZ = sum / count;
-    return abs((distortedReceiver.z - blockerClipZ) / shadowProjection[2][2]);
+    return abs((distortedReceiver.z - blockerClipZ) / (shadowProjection[2][2] * SHADOW_Z_SCALE));
 }
 
 vec3 getPCSSShadow(in vec3 shadowClipPos, in float noise) {

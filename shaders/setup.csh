@@ -22,5 +22,7 @@ void main() {
     vec3 rayDir = equirectToDir(uv);
     vec3 color = getSkyLut(rayDir);
 
+    color = clamp(color, vec3(0), vec3(999));
+    
     imageStore(skyLut, texelCoord, vec4(color, 1));
 }

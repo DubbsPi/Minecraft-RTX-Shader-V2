@@ -3,11 +3,17 @@
 
 
 #include "settings.glsl"
+#include "random.glsl"
 
 
 layout(std430, binding = 0) buffer Counters {
     uint quadCount;
     uint vertexCount;
+
+    uint rebuildFlag;
+    uint vertexHash[64];
+    uint vertexHashPrev[64];
+    vec3 buildCameraPosition;
 
     uint textureHashes[1024];
     ivec2 texSize[1024];
@@ -59,6 +65,27 @@ void unpackAttributes(in uvec2 data, out vec2 uv, out vec4 glColor) {
     uv.y = float(data.x >> 16u) / 65535.0;
     if (isEntity) uv += entityTexcoordOffset;
     glColor = unpackUnorm4x8(data.y);
+}
+
+
+uint hashVertex(in vec3 p) {
+    ivec3 i = ivec3(p * 0.01);
+    return hash3(i);
+}
+
+uint getSlot(in vec3 p) {
+    ivec3 signRegion = ivec3(
+        p.x < 0.0? 1 : 0,
+        p.y < 0.0? 1 : 0,
+        p.z < 0.0? 1 : 0
+    );
+
+    ivec3 cell = ivec3(floor(abs(p)));
+    ivec3 region = cell & 1;
+
+    region = (region + signRegion * 2) & 3;
+
+    return region.x + region.y * 4 + region.z * 16;
 }
 
 

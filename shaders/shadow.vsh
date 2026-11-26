@@ -1,5 +1,9 @@
 #version 430 compatibility
 
+#extension GL_KHR_shader_subgroup_basic : enable
+#extension GL_KHR_shader_subgroup_ballot : enable
+#extension GL_KHR_shader_subgroup_shuffle : enable
+
 #include "lib/settings.glsl"
 #include "lib/shadow_util.glsl"
 #include "lib/vertex_util.glsl"
@@ -7,6 +11,11 @@
 
 #define DONT_INLCUDE_READONLY_VERTS
 #include "lib/bvh_util.glsl"
+
+
+#if defined(GL_KHR_shader_subgroup_basic) && defined(GL_KHR_shader_subgroup_ballot) && defined(GL_KHR_shader_subgroup_shuffle) && !defined(FORCE_NO_SUBGROUPS)
+    #define USE_SUBGROUPS
+#endif
 
 
 #ifdef RTX_FEATURES
@@ -18,10 +27,7 @@
 uniform mat4 shadowProjectionInverse;
 uniform mat4 shadowModelViewInverse;
 
-uniform vec3 cameraPosition;
 uniform float frameTimeCounter;
-uniform int frameCounter;
-
 
 in vec3 mc_Entity;
 in vec4 at_midBlock;
@@ -38,30 +44,32 @@ void main() {
     vec4 rawShadowClipPos = ftransform();
     gl_Position = rawShadowClipPos;
     gl_Position.xyz = distortShadowClipPos(gl_Position.xyz);
-
+    
 
     vIsWater = (mc_Entity.x == 10001.0)? 1.0 : 0.0;
 
 
     #ifdef RTX_FEATURES
-        if (frameCounter < BVH_DELAY_FRAMES) return;
-                
-        #ifdef TRACE_WATER
+        bool valid = frameCounter >= BVH_DELAY_FRAMES;
+
+        vec3 feetPos = vec3(0);
+        if (valid) {
             vec3 shadowViewPos = (shadowProjectionInverse * rawShadowClipPos).xyz;
-            vec3 feetPos = (shadowModelViewInverse * vec4(shadowViewPos, 1)).xyz;
+            feetPos = (shadowModelViewInverse * vec4(shadowViewPos, 1)).xyz;
             vec3 world = feetPos + cameraPosition;
 
-            if (vIsWater > 0.5) {
-                float surface = step(0.05, fract(world.y + 0.01));
+            atomicAdd(TriCounter.vertexHash[gl_VertexID & 63], hashVertex(feetPos));
 
-                vec3 displacement = evaluateWaterDisplacement(world.xz, frameTimeCounter);
-                feetPos += displacement * surface;
-            }
-            
-            #include "/lib/vertex_write.glsl"
-        #else
-            if (vIsWater > 0.5) return;
-            #include "lib/vertex_write.glsl"
-        #endif
+            #ifdef TRACE_WATER
+                if (vIsWater > 0.5) {
+                    float surface = step(0.05, fract(world.y + 0.01));
+                    feetPos += evaluateWaterDisplacement(world.xz, frameTimeCounter) * surface;
+                }
+            #else
+                if (vIsWater > 0.5) valid = false;
+            #endif
+        }
+
+        #include "lib/vertex_write.glsl"
     #endif
 }

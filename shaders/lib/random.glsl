@@ -3,9 +3,9 @@
 
 
 const mat3 FBM_ROT = mat3(
-    0.00, 0.80, 0.60,
-    -0.80, 0.36, -0.48,
-    -0.60, -0.48, 0.64
+    0.2, 0.8, 0.6,
+    -0.8, 0.36, -0.48,
+    -0.6, -0.48, 0.64
 );
 
 
@@ -16,6 +16,19 @@ uint pcg(inout uint state) {
     return (word >> 22u) ^ word;
 }
 
+uvec3 pcg3d(uvec3 v) {
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y * v.z;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    v ^= v >> 16u;
+    v.x += v.y * v.z;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    return v;
+}
+
+
 uint hash(in uint x) {
     x ^= x >> 17; x *= 0xbf324c81u;
     x ^= x >> 11; x *= 0x68bc2a9du;
@@ -23,7 +36,7 @@ uint hash(in uint x) {
     return x;
 }
 
-uint hash2(uvec2 p) {
+uint hash2(in uvec2 p) {
     return hash(p.x ^ hash(p.y + 0x9e3779b9u));
 }
 

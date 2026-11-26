@@ -8,6 +8,7 @@ in vec2 lmcoord;
 in vec4 glcolor;
 in vec3 normal;
 
+
 layout(location = 0) out vec4 outAlbedo;
 layout(location = 1) out vec4 outNormal;
 layout(location = 2) out vec4 outLight;

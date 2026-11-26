@@ -505,33 +505,10 @@ bool bvhTraceTinted(in vec3 ro, in vec3 rd, in float tMax, out float closestT, o
 }
 
 vec3 bvhTintedShadow(in vec3 ro, in vec3 rd, in float tMax) {
-    uint n = TriCounter.quadCount;
-    vec3 trans = vec3(1);
-    if (n == 0u) return trans;
-    if (n == 1u) return tintQuad(0u, ro, rd, tMax, trans) ? vec3(0.0) : trans;
-
-    vec3 raySign = mix(vec3(-1), vec3(1.0), greaterThanEqual(rd, vec3(0.0)));
-    vec3 invD = raySign / max(abs(rd), vec3(1e-8));
-
-    uint node = 0u;
-    uint startLane = 0u;
-
-    for (;;) {
-        uint child; uint childLane; bool blocked;
-        bool hasChild = traceNodeTint(node, startLane, ro, rd, invD, tMax, trans, child, childLane, blocked);
-        if (blocked) return vec3(0.0);
-
-        if (!hasChild) {
-            if (node == 0u) return trans;
-            uint parentLane = packedNodeParent[node];
-            node = parentLane >> 2u;
-            startLane = (parentLane & 3u) + 1u;
-            continue;
-        }
-
-        node = child;
-        startLane = 0u;
-    }
+    float tOut; vec2 uv; uint hitIdx; bool first; vec3 transmittance;
+    bool hit = bvhTraceTinted(ro, rd, tMax, tOut, uv, hitIdx, first, transmittance);
+    if (hit) return 1.0 - transmittance;
+    return vec3(1);
 }
 
 
