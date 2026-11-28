@@ -119,45 +119,47 @@ vec3 getLighting(
     // Shadow calculation
     vec3 shadow = vec3(1);
     bool traced = false;
-    #if defined RTX_SHADOWS && defined RTX_FEATURES
-        vec3 worldPos = (gbufferModelViewInverse * vec4(P, 1.0)).xyz;
-        vec3 worldN = normalize(mat3(gbufferModelViewInverse) * N);
+    #if !defined REFLECTION_BUFFER || defined RTX_REFLECTION_SHADOWS
+        #if defined RTX_SHADOWS && defined RTX_FEATURES
+            vec3 worldPos = (gbufferModelViewInverse * vec4(P, 1.0)).xyz;
+            vec3 worldN = normalize(mat3(gbufferModelViewInverse) * N);
 
-        bool sunOnFront = rawNdotL >= 0.0;
-        vec3 sunN = sunOnFront ? worldN : -worldN;
-        bool wantsSSS = SSS_STRENGTH > 0.0;
+            bool sunOnFront = rawNdotL >= 0.0;
+            vec3 sunN = sunOnFront? worldN : -worldN;
+            bool wantsSSS = SSS_STRENGTH > 0.0;
 
-        #ifdef PIXELATED_SHADOWS
-            worldPos = snapToShadowGrid(worldPos, sunN);
-        #endif
+            #ifdef PIXELATED_SHADOWS
+                worldPos = snapToShadowGrid(worldPos, sunN);
+            #endif
 
-        bool needsTrace = true;
-        if (!sunOnFront && !wantsSSS) {shadow = vec3(0); needsTrace = false;}
-        else if (abs(rawNdotL) <= 0.0) {shadow = vec3(1); needsTrace = false;}
-        else if (skyLight < 0.003) {shadow = vec3(1); needsTrace = false;}
-        #ifdef RTX_SHADOW_CULLING
-            else if (shadowMapSaysClear(worldPos, sunN, rawNdotL)) {shadow = vec3(1); needsTrace = false;}
-        #endif
+            bool needsTrace = true;
+            if (!sunOnFront && !wantsSSS) {shadow = vec3(0); needsTrace = false;}
+            else if (abs(rawNdotL) <= 0.0) {shadow = vec3(1); needsTrace = false;}
+            else if (skyLight < 0.003) {shadow = vec3(1); needsTrace = false;}
+            #ifdef RTX_SHADOW_CULLING
+                else if (shadowMapSaysClear(worldPos, sunN, rawNdotL)) {shadow = vec3(1); needsTrace = false;}
+            #endif
 
-        if (needsTrace) {
-            vec3 accumulatedShadow = vec3(0);
-            for (int i = 0; i < SHADOW_SAMPLES; ++i) {
-                traced = true;
-                vec3 roW = worldPos + sunN * 0.01;
-                #ifdef PIXELATED_SHADOWS
-                    uvec3 cell = uvec3(ivec3(floor(worldPos * float(SHADOW_PIXELS_PER_BLOCK))) + 100000);
-                    uint cellSeed = cell.x * 1973u ^ cell.y * 9277u ^ cell.z * 26699u;
-                    cellSeed ^= uint(frameCounter) * 747796405u;
-                    vec3 rdW = jitterRaySun(lightDirW, cellSeed);
-                #else
-                    vec3 rdW = jitterRaySun(lightDirW, rngState);
-                #endif
-                accumulatedShadow += bvhTintedShadow(roW, rdW, MAX_DIST);
+            if (needsTrace) {
+                vec3 accumulatedShadow = vec3(0);
+                for (int i = 0; i < RTX_SHADOW_SAMPLES; ++i) {
+                    traced = true;
+                    vec3 roW = worldPos + sunN * 0.01;
+                    #ifdef PIXELATED_SHADOWS
+                        uvec3 cell = uvec3(ivec3(floor(worldPos * float(SHADOW_PIXELS_PER_BLOCK))) + 100000);
+                        uint cellSeed = cell.x * 1973u ^ cell.y * 9277u ^ cell.z * 26699u;
+                        cellSeed ^= uint(frameCounter) * 747796405u;
+                        vec3 rdW = jitterRaySun(lightDirW, cellSeed);
+                    #else
+                        vec3 rdW = jitterRaySun(lightDirW, rngState);
+                    #endif
+                    accumulatedShadow += bvhTintedShadow(roW, rdW, MAX_DIST);
+                }
+                shadow = accumulatedShadow / float(RTX_SHADOW_SAMPLES);
             }
-            shadow = accumulatedShadow / float(SHADOW_SAMPLES);
-        }
-    #else
-        shadow = getNormalShadows(P, N, rngState);
+        #else
+            shadow = getNormalShadows(P, N, rngState);
+        #endif
     #endif
 
 
@@ -192,7 +194,7 @@ vec3 getLighting(
     vec3 fogColorLinear = pow(max(fogColor, vec3(0)), vec3(2.2));
     color = mix(color, fogColorLinear, fogAmount);
 
-    float reflectionMask = mat.roughness < SSR_MAX_ROUGHNESS ? 1.0 : 0.0;
+    float reflectionMask = mat.roughness < SSR_MAX_ROUGHNESS? 1.0 : 0.0;
     reflectionWeight = vec4(clamp(envBRDF * (1.0 - fogAmount) * reflectionMask, 0.0, 1.0), mat.roughness);
 
     #ifdef DEBUG_RT_CULL

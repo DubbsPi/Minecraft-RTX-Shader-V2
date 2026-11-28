@@ -21,6 +21,8 @@
 #ifdef RTX_FEATURES
     layout(rg32ui, binding = 0) uniform writeonly restrict uimage2D vertexPositions;
     layout(rg32ui, binding = 1) uniform writeonly restrict uimage2D vertexAttributes;
+    layout(rg32ui, binding = 5) uniform writeonly restrict uimage2D dynamicVertexPositions;
+    layout(rg32ui, binding = 6) uniform writeonly restrict uimage2D dynamicVertexAttributes;
 #endif
 
 
@@ -30,7 +32,6 @@ uniform mat4 shadowModelViewInverse;
 uniform float frameTimeCounter;
 
 in vec3 mc_Entity;
-in vec4 at_midBlock;
 
 out vec2 texcoord;
 out vec4 glcolor;
@@ -51,6 +52,12 @@ void main() {
 
     #ifdef RTX_FEATURES
         bool valid = frameCounter >= BVH_DELAY_FRAMES;
+        bool dynamicWrite = vIsWater > 0.5;
+
+        vec2 lm = (gl_TextureMatrix[1] * gl_MultiTexCoord1).xy;
+        vec2 lightmap = clamp((lm - 1.0 * 0.03125) * 1.06666666667, 0.0, 1.0);
+        
+        bool isOpaque = true;
 
         vec3 feetPos = vec3(0);
         if (valid) {
@@ -58,18 +65,17 @@ void main() {
             feetPos = (shadowModelViewInverse * vec4(shadowViewPos, 1)).xyz;
             vec3 world = feetPos + cameraPosition;
 
-            atomicAdd(TriCounter.vertexHash[gl_VertexID & 63], hashVertex(feetPos));
-
             #ifdef TRACE_WATER
-                if (vIsWater > 0.5) {
+                if (dynamicWrite) {
                     float surface = step(0.05, fract(world.y + 0.01));
                     feetPos += evaluateWaterDisplacement(world.xz, frameTimeCounter) * surface;
                 }
             #else
-                if (vIsWater > 0.5) valid = false;
+                if (dynamicWrite) valid = false;
             #endif
         }
 
+        uint assignedSlot = 0xffffffffu;
         #include "lib/vertex_write.glsl"
     #endif
 }

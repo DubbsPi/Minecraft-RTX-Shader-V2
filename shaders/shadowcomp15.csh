@@ -11,12 +11,14 @@ layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 const ivec3 workGroups = ivec3(MAX_QUADS_OVER_64, 1, 1);
 
 
-layout(std430, binding = 4) restrict readonly buffer Children { uvec2 childOf[]; };
-layout(std430, binding = 5) restrict readonly buffer Parents { uint parentOf[]; };
-layout(std430, binding = 7) coherent buffer Flags { uint visitCount[]; };
+layout(std430, binding = 4) restrict readonly buffer Children {uvec2 childOf[];};
+layout(std430, binding = 5) restrict readonly buffer Parents {uint parentOf[];};
+layout(std430, binding = 7) coherent buffer Flags {uint visitCount[];};
 
 
 void main() {
+    if (TriCounter.captureFlag == 0u) return;
+
     uint j = gl_GlobalInvocationID.x;
     uint n = TriCounter.quadCount;
     if (n < 2u || j >= n) return;

@@ -42,7 +42,7 @@ bool hasTranslucentSurface(in ivec2 px) {
 
 vec3 getDenoiseNormal(in ivec2 px) {
     vec3 translucentNormal = texelFetch(colortex6, px, 0).xyz;
-    return hasTranslucentSurface(px) ? normalize(translucentNormal) : getNormal(px);
+    return hasTranslucentSurface(px)? normalize(translucentNormal) : getNormal(px);
 }
 
 float getDenoiseDepth(in ivec2 px) {
@@ -53,7 +53,7 @@ float getDenoiseDepth(in ivec2 px) {
 
 float getDenoiseRoughness(in ivec2 px) {
     vec4 translucentData = texelFetch(colortex6, px, 0);
-    return translucentData.w >= 1.5 ? WATER_ROUGHNESS : getRoughness(px);
+    return translucentData.w >= 1.5? WATER_ROUGHNESS : getRoughness(px);
 }
 
 

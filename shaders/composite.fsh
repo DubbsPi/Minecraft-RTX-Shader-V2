@@ -2,7 +2,6 @@
 
 #include "lib/settings.glsl"
 #include "lib/random.glsl"
-#include "lib/taa.glsl"
 #include "lib/sky.glsl"
 #include "lib/pbr.glsl"
 #include "lib/lighting.glsl"
@@ -45,7 +44,6 @@ void main() {
     reflWeight = vec4(0);
 
     vec3 NDCPos = vec3(texcoord, depth) * 2.0 - 1.0;
-    NDCPos.xy -= taaJitter();
     vec3 viewPos = projectAndDivide(gbufferProjectionInverse, NDCPos);
 
     vec3 rayDirView = normalize(viewPos);

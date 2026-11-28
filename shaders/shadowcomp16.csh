@@ -20,7 +20,7 @@ layout(std430, binding = 8) restrict writeonly buffer PackedNodeParents {uint pa
 
 
 uvec2 gatherSlots(in uint child, in uint n) {
-    return (child >= n - 1u) ? uvec2(child, EMPTY_REF) : childOf[child];
+    return (child >= n - 1u)? uvec2(child, EMPTY_REF) : childOf[child];
 }
 
 ivec3 ceilLog2(in vec3 x) {
@@ -30,7 +30,7 @@ ivec3 ceilLog2(in vec3 x) {
 
 
 void main() {
-    //if (TriCounter.rebuildFlag == 0u) return;
+    if (TriCounter.captureFlag == 0u) return;
 
     uint i = gl_GlobalInvocationID.x;
     uint n = TriCounter.quadCount;

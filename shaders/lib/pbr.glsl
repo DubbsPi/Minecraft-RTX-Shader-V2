@@ -84,7 +84,7 @@ vec3 sampleGGXVNDF(in vec3 Ve, in float alpha, in vec2 xi) {
     vec3 Vh = normalize(vec3(alpha * Ve.x, alpha * Ve.y, max(Ve.z, 1e-5)));
     float lensq = dot(Vh.xy, Vh.xy);
 
-    vec3 T1 = lensq > 1e-8 ? vec3(-Vh.y, Vh.x, 0) / sqrt(lensq) : vec3(1, 0, 0);
+    vec3 T1 = lensq > 1e-8? vec3(-Vh.y, Vh.x, 0) / sqrt(lensq) : vec3(1, 0, 0);
     vec3 T2 = cross(Vh, T1);
 
     float r = sqrt(xi.x);

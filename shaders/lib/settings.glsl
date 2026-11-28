@@ -6,16 +6,21 @@
 
 /*
 const int colortex0Format = RGBA16F;  // Scene color
+const int colortex1Format = RGBA16F;  // Opaque normals
+const int colortex2Format = RG16F;    // Lightmap
+const int colortex3Format = RG16F;    // PBR material
 const int colortex4Format = RGBA16F;  // Reflections
-const int colortex6Format = RGBA16F;  // Water normals
-const int colortex7Format = RG32F;    // Reflection depth
+const int colortex5Format = RGBA16F;  // Translucent tint
+const int colortex6Format = RGBA16F;  // Translucent normals
+const int colortex7Format = RG16F;    // Reflection depth
 */
 
 
 // TAA
 const int TAA_JITTER_FRAMES = 8;
 const float VARIANCE_GAMMA = 1.25;
-const float BASE_BLEND = 0.15;
+const float BASE_BLEND = 0.10;
+const float TAA_ADAPTIVE_BLEND = 0.28;
 
 
 // Shadows
@@ -123,7 +128,7 @@ const float sunPathRotation = SUN_PATH_ROTATION;
 #define SSR_REFINE_STEPS 4 // [2 3 4 5 6]
 #define SSR_MAX_DIST 64.0
 #define SSR_THICKNESS 0.5 // [0.2 0.35 0.5 0.75]
-#define SSR_MAX_ROUGHNESS 0.6
+#define SSR_MAX_ROUGHNESS 0.95
 
 
 // Water
@@ -176,112 +181,157 @@ const vec2 WATER_FINE_SCROLL = vec2(0.22, -0.30);
 
 
 // RTX features
-#ifdef IS_IRIS
-    #define RTX_FEATURES
-    #define RTX_REFLECTIONS
-    #define RTX_SHADOWS
+#define RTX_FEATURES
+#define RTX_REFLECTIONS
+#define RTX_SHADOWS
 
-    #define SHADOW_SAMPLES 1 // [1 2 3 4 6 8 10 12 16]
-    //#define RTX_SHADOW_CULLING
-    #define CULL_TAP_RADIUS 2
-    
-    //#define FORCE_NO_SUBGROUPS
-    #ifdef FORCE_NO_SUBGROUPS
-    #endif
+#define BVH_REUSE
+#define RTX_REFRACTION
+//#define SS_REFRACTION_FIRST
+//#define SSR_FIRST
 
-    #define MAX_QUADS 2359296 // [262144 589824 1048576 2359296 4194304]
-    #define MAX_DIST 128.0 // [16.0 32.0 64.0 128.0 196.0 256.0 384.0]
-    #define VIRT_MAX 2048.0
+#define RTX_REFLECTION_SHADOWS
+#define RTX_SHADOW_SAMPLES 1 // [1 2 3 4 6 8 10 12 16]
+//#define RTX_SHADOW_CULLING
+#define CULL_TAP_RADIUS 2
 
-    #define BVH_DELAY_FRAMES 96 // [0 64 96 128 256]
-    #define RT_ALPHA_CUTOFF 0.025
+//#define USE_SUBGROUPS // Broken
 
-    #define RT_OPAQUE_ALPHA 0.98
-    #define RT_TINT_EPS 0.002
-    #define RT_TINT_MIN_ENERGY 0.004
-    #define MAX_TINT_LAYERS 8
-    
+#define MAX_QUADS 2359296 // [262144 589824 1048576 2359296 4194304]
+#define MAX_CHUNK_DIST 8 // [2 4 6 8 10 12 14 16 18 20 22 24 26 28 30 32]
+#define VIRT_MAX 2048.0
 
-    uniform float far;
-    #define ACTUAL_MAX_DIST min(MAX_DIST, far)
-    const float shadowDistance = MAX_DIST;
-    const float shadowDistanceRenderMul = 1.0;
+#define BVH_DELAY_FRAMES 96 // [0 64 96 128 256]
+#define RT_ALPHA_CUTOFF 0.025
 
-    const float RAY_EPSILON = 1e-6;
-    
-
-    #define TRACE_WATER
-    #define TRACE_ENTITIES
-    const vec2 entityTexcoordOffset = vec2(-1.1);
-
-    #define ENTITY_ATLAS_SLOT_SIZE 128
-    #define ENTITY_ATLAS_SIZE 4096
+#define RT_OPAQUE_ALPHA 0.98
+#define RT_TINT_EPS 0.002
+#define RT_TINT_MIN_ENERGY 0.004
+#define MAX_TINT_LAYERS 8
 
 
-    // We ignore me not renaming this
-    #if MAX_QUADS == 4194304
-        #define MAX_VERTS_SQRT 4096
-    #elif MAX_QUADS == 2359296
-        #define MAX_VERTS_SQRT 3072
-    #elif MAX_QUADS == 1048576
-        #define MAX_VERTS_SQRT 2048
-    #elif MAX_QUADS == 589824
-        #define MAX_VERTS_SQRT 1536
-    #elif MAX_QUADS == 262144
-        #define MAX_VERTS_SQRT 1024
-    #endif
-
-    #if MAX_QUADS == 4194304
-        #define MAX_QUADS_OVER_128 32768
-    #elif MAX_QUADS == 2359296
-        #define MAX_QUADS_OVER_128 16384
-    #elif MAX_QUADS == 1048576
-        #define MAX_QUADS_OVER_128 8192
-    #elif MAX_QUADS == 589824
-        #define MAX_QUADS_OVER_128 4096
-    #elif MAX_QUADS == 262144
-        #define MAX_QUADS_OVER_128 2048
-    #endif
-
-    #if MAX_QUADS == 4194304
-        #define MAX_QUADS_OVER_64 65536
-    #elif MAX_QUADS == 2359296
-        #define MAX_QUADS_OVER_64 32768
-    #elif MAX_QUADS == 1048576
-        #define MAX_QUADS_OVER_64 16384
-    #elif MAX_QUADS == 589824
-        #define MAX_QUADS_OVER_64 8192
-    #elif MAX_QUADS == 262144
-        #define MAX_QUADS_OVER_64 4096
-    #endif
-
-    #if MAX_QUADS == 4194304
-        #define MAX_QUADS_OVER_4096 1024
-    #elif MAX_QUADS == 2359296
-        #define MAX_QUADS_OVER_4096 512
-    #elif MAX_QUADS == 1048576
-        #define MAX_QUADS_OVER_4096 256
-    #elif MAX_QUADS == 589824
-        #define MAX_QUADS_OVER_4096 128
-    #elif MAX_QUADS == 262144
-        #define MAX_QUADS_OVER_4096 64
-    #endif
-
-
-    //#define VERTEX_COUNT_DEBUG
-    //#define RADIX_SORT_DEBUG
-    //#define BVH_DEBUG
-    #define TRACE_DEBUG 0 // [0 1 2]
-    //#define ENTITY_ATLAS_DEBUG
-    //#define VERTEX_HASH_DEBUG
-    //#define DEBUG_RT_CULL
+#if MAX_CHUNK_DIST == 2
+    #define MAX_DIST 32.0
+#elif MAX_CHUNK_DIST == 4
+    #define MAX_DIST 64.0
+#elif MAX_CHUNK_DIST == 6
+    #define MAX_DIST 96.0
+#elif MAX_CHUNK_DIST == 8
+    #define MAX_DIST 128.0
+#elif MAX_CHUNK_DIST == 10
+    #define MAX_DIST 160.0
+#elif MAX_CHUNK_DIST == 12
+    #define MAX_DIST 192.0
+#elif MAX_CHUNK_DIST == 14
+    #define MAX_DIST 224.0
+#elif MAX_CHUNK_DIST == 16
+    #define MAX_DIST 256.0
+#elif MAX_CHUNK_DIST == 18
+    #define MAX_DIST 288.0
+#elif MAX_CHUNK_DIST == 20
+    #define MAX_DIST 320.0
+#elif MAX_CHUNK_DIST == 22
+    #define MAX_DIST 352.0
+#elif MAX_CHUNK_DIST == 24
+    #define MAX_DIST 384.0
+#elif MAX_CHUNK_DIST == 26
+    #define MAX_DIST 416.0
+#elif MAX_CHUNK_DIST == 28
+    #define MAX_DIST 448.0
+#elif MAX_CHUNK_DIST == 30
+    #define MAX_DIST 480.0
+#elif MAX_CHUNK_DIST == 32
+    #define MAX_DIST 512.0
 #endif
+
+uniform float far;
+#define ACTUAL_MAX_DIST min(MAX_DIST, far)
+const float shadowDistance = MAX_DIST;
+const float shadowDistanceRenderMul = 1.0;
+
+const float RAY_EPSILON = 1e-6;
+
+
+#define TRACE_WATER
+#define TRACE_ENTITIES
+
+#define ENTITY_ATLAS_SLOT_SIZE 128
+#define ENTITY_ATLAS_SIZE 4096
+
+
+// We ignore me not renaming this
+#if MAX_QUADS == 4194304
+    #define MAX_VERTS_SQRT 4096
+#elif MAX_QUADS == 2359296
+    #define MAX_VERTS_SQRT 3072
+#elif MAX_QUADS == 1048576
+    #define MAX_VERTS_SQRT 2048
+#elif MAX_QUADS == 589824
+    #define MAX_VERTS_SQRT 1536
+#elif MAX_QUADS == 262144
+    #define MAX_VERTS_SQRT 1024
+#endif
+
+#if MAX_QUADS == 4194304
+    #define MAX_QUADS_OVER_128 32768
+#elif MAX_QUADS == 2359296
+    #define MAX_QUADS_OVER_128 16384
+#elif MAX_QUADS == 1048576
+    #define MAX_QUADS_OVER_128 8192
+#elif MAX_QUADS == 589824
+    #define MAX_QUADS_OVER_128 4096
+#elif MAX_QUADS == 262144
+    #define MAX_QUADS_OVER_128 2048
+#endif
+
+#if MAX_QUADS == 4194304
+    #define MAX_QUADS_OVER_64 65536
+#elif MAX_QUADS == 2359296
+    #define MAX_QUADS_OVER_64 32768
+#elif MAX_QUADS == 1048576
+    #define MAX_QUADS_OVER_64 16384
+#elif MAX_QUADS == 589824
+    #define MAX_QUADS_OVER_64 8192
+#elif MAX_QUADS == 262144
+    #define MAX_QUADS_OVER_64 4096
+#endif
+
+#if MAX_QUADS == 4194304
+    #define MAX_QUADS_OVER_4096 1024
+#elif MAX_QUADS == 2359296
+    #define MAX_QUADS_OVER_4096 512
+#elif MAX_QUADS == 1048576
+    #define MAX_QUADS_OVER_4096 256
+#elif MAX_QUADS == 589824
+    #define MAX_QUADS_OVER_4096 128
+#elif MAX_QUADS == 262144
+    #define MAX_QUADS_OVER_4096 64
+#endif
+
+
+//#define VERTEX_COUNT_DEBUG
+//#define RADIX_SORT_DEBUG
+//#define BVH_DEBUG
+#define TRACE_DEBUG 0 // [0 1 2]
+//#define ENTITY_ATLAS_DEBUG
+//#define VERTEX_HASH_DEBUG
+//#define DEBUG_RT_CULL
+//#define BVH_REUSE_DEBUG
 
 #ifdef TRACE_WATER
 #endif
 #ifdef TRACE_ENTITIES
 #endif
-
+#ifdef RTX_REFLECTIONS
+#endif
+#ifdef RTX_SHADOWS
+#endif
+#ifdef RTX_SHADOW_SAMPLES
+#endif
+#ifdef USE_SUBGROUPS
+#endif
+#ifdef RTX_REFLECTION_SHADOWS
+#endif
 
 #if defined RTX_SHADOWS && defined RTX_SHADOW_CULLING
     const int shadowMapResolution = 2048;

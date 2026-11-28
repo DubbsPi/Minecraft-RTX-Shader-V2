@@ -1,6 +1,5 @@
 #version 430 compatibility
 
-#include "lib/taa.glsl"
 #include "lib/settings.glsl"
 #include "lib/waves.glsl"
 
@@ -41,5 +40,4 @@ void main() {
     }
 
     gl_Position = gl_ProjectionMatrix * viewPos;
-    gl_Position.xy += taaJitter() * gl_Position.w;
 }

@@ -6,7 +6,7 @@
 
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
-const ivec3 workGroups = ivec3(256, 256, 1);
+const ivec3 workGroups = ivec3(128, 128, 1);
 
 
 layout(rgb10_a2, binding = 0) uniform image2D skyLut;

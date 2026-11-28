@@ -198,7 +198,7 @@ void main() {
                 for (uint k = 0u; k < 4u; k++) {
                     uint id = ids[k];
                     if (id == EMPTY_REF) { refsOk = refsOk && t1[k] == EMPTY_REF; continue; }
-                    refsOk = refsOk && t1[k] == ((id >= n - 1u) ? (LEAF_BIT | vals[id - (n - 1u)]) : id);
+                    refsOk = refsOk && t1[k] == ((id >= n - 1u)? (LEAF_BIT | vals[id - (n - 1u)]) : id);
 
                     vec3 dlo = p + vec3(byteOf(t2.x, k), byteOf(t2.y, k), byteOf(t2.z, k)) * s;
                     vec3 dhi = p + vec3(byteOf(t2.w, k), byteOf(t3.x, k), byteOf(t3.y, k)) * s;
@@ -253,5 +253,9 @@ void main() {
         }
     #endif
     
+    #ifdef BVH_REUSE_DEBUG
+        if (texcoord.x > 0.99) color = TriCounter.rebuildFlag == 0u? vec3(0, 1, 0) : vec3(1, 0, 0);
+    #endif
+
     outColor = vec4(color, 1);
 }

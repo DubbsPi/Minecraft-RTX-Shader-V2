@@ -16,6 +16,8 @@ layout(std430, binding = 7) restrict writeonly buffer Flags { uint visitCount[];
 
 
 void main() {
+    if (TriCounter.captureFlag == 0u) return;
+
     uint q = gl_GlobalInvocationID.x;
     if (q >= TriCounter.quadCount) return;
 

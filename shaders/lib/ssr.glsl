@@ -30,8 +30,9 @@ float viewZ(in float d) {
     return zz / ww;
 }
 
+
 bool traceSSR(in vec3 P, in vec3 R, in float dither, out vec2 hitUV) {
-    hitUV = vec2(0.0);
+    hitUV = vec2(0);
 
     float len = SSR_MAX_DIST;
     if (R.z > 1e-5 && P.z + R.z * len > -0.1) len = (-0.1 - P.z) / R.z;
@@ -69,6 +70,8 @@ bool traceSSR(in vec3 P, in vec3 R, in float dither, out vec2 hitUV) {
         float invW = mix(invW0, invW1, t);
         float rayZ = mix(viewZOverW0, viewZOverW1, t) / invW;
         float sceneD = texture(depthtex0, uv).r;
+        if (sceneD < 0.56) continue;
+        
         float diff = -SSR_THICKNESS;
         if (sceneD < 1.0) {
             diff = viewZ(sceneD) - rayZ;

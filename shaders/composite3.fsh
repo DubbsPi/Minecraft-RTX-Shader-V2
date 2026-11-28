@@ -125,7 +125,7 @@ void main() {
 
     if (wsum > 1e-3) {
         hist /= wsum; histM2 /= wsum;
-        float maxLen = mix(1.0, 128.0, smoothstep(0.0, 0.5, rough));
+        float maxLen = mix(1.0, 128.0, smoothstep(0.05, 0.5, rough));
         len = min(hist.a + 1.0, maxLen);
         float alpha = 1.0 / len;
 

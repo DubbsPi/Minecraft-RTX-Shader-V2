@@ -8,9 +8,11 @@ layout(local_size_x = 128) in;
 const ivec3 workGroups = ivec3(MAX_QUADS_OVER_128, 1, 1);
 
 
-layout(std430, binding = 1) restrict readonly buffer SortKeys { uint keys[]; };
-layout(std430, binding = 4) restrict writeonly buffer Children { uvec2 childOf[]; };
-layout(std430, binding = 5) restrict writeonly buffer Parents { uint parentOf[]; };
+layout(std430, binding = 1) restrict readonly buffer SortKeys {uint keys[];};
+layout(std430, binding = 4) restrict writeonly buffer Children {uvec2 childOf[];};
+layout(std430, binding = 5) restrict writeonly buffer Parents {uint parentOf[];};
+
+layout(rg32ui, binding = 1) uniform readonly restrict uimage2D vertexAttributes;
 
 
 int delta(in int i, in uint ki, in int j, in int n) {
@@ -21,10 +23,12 @@ int delta(in int i, in uint ki, in int j, in int n) {
 
 
 void main() {
+    if (TriCounter.captureFlag == 0u) return;
+
     int i = int(gl_GlobalInvocationID.x);
     int n = int(TriCounter.quadCount);
     if (i >= n - 1) return;
-
+    
     uint ki = keys[i];
 
     int d = sign(delta(i, ki, i + 1, n) - delta(i, ki, i - 1, n));

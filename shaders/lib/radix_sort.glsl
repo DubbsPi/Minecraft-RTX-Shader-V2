@@ -8,13 +8,9 @@
 #include "vertex_util.glsl"
 
 
-#if defined(GL_KHR_shader_subgroup_basic) && defined(GL_KHR_shader_subgroup_ballot) && !defined(FORCE_NO_SUBGROUPS)
-    #define USE_SUBGROUPS
-#endif
-
 #define SORT_THREADS 256u
 #define SORT_ROUNDS 16u
-#define SORT_MAX_SG 16u
+#define SORT_MAX_SG 32u
 #define SORT_TILE (SORT_THREADS * SORT_ROUNDS)
 
 
@@ -59,7 +55,7 @@ uvec4 peerMask(in uint d, in bool valid) {
         for (uint b = 0u; b < 8u; ++b) {
             bool bit = ((d >> b) & 1u) != 0u;
             uvec4 bal = subgroupBallot(bit);
-            m &= bit ? bal : ~bal;
+            m &= bit? bal : ~bal;
         }
         return m;
     #endif
@@ -80,6 +76,8 @@ uint laneBase(in uint tile) {
         shared uint localHist[256];
 
         void main() {
+            if (TriCounter.captureFlag == 0u) return;
+
             uint n = TriCounter.quadCount;
             uint numTiles = sortNumTiles(n);
             uint tile = gl_WorkGroupID.x;
@@ -101,7 +99,9 @@ uint laneBase(in uint tile) {
     #elif SORT_STAGE == 1
         shared uint partial[1024];
 
-        void main() {        
+        void main() {
+            if (TriCounter.captureFlag == 0u) return;
+
             uint tid = gl_LocalInvocationID.x;
             uint numTiles = sortNumTiles(TriCounter.quadCount);
             uint total = 256u * numTiles;
@@ -133,7 +133,9 @@ uint laneBase(in uint tile) {
         shared uint runCount[256];
         shared uint digs[256];
 
-        void main() {        
+        void main() {
+            if (TriCounter.captureFlag == 0u) return;
+
             uint n = TriCounter.quadCount;
             uint numTiles = sortNumTiles(n);
             uint tile = gl_WorkGroupID.x;
@@ -173,6 +175,8 @@ uint laneBase(in uint tile) {
         shared uint sgHist[SORT_MAX_SG * 256u];
 
         void main() {
+            if (TriCounter.captureFlag == 0u) return;
+
             uint n = TriCounter.quadCount;
             uint numTiles = sortNumTiles(n);
             uint tile = gl_WorkGroupID.x;
@@ -181,6 +185,7 @@ uint laneBase(in uint tile) {
             uint tid = gl_LocalInvocationID.x;
             uint sg = gl_SubgroupID;
             uint numSg = gl_NumSubgroups;
+            if (numSg > SORT_MAX_SG) return;
 
             for (uint k = tid; k < numSg * 256u; k += SORT_THREADS) sgHist[k] = 0u;
             barrier();
@@ -189,7 +194,7 @@ uint laneBase(in uint tile) {
             for (uint r = 0u; r < SORT_ROUNDS; ++r) {
                 uint i = i0 + r * gl_SubgroupSize;
                 bool valid = i < n;
-                uint d = valid ? digitOf(srcKeys[i]) : 0u;
+                uint d = valid? digitOf(srcKeys[i]) : 0u;
 
                 uvec4 peers = peerMask(d, valid);
                 uint rank = popc4(peers & gl_SubgroupLtMask);
@@ -205,7 +210,9 @@ uint laneBase(in uint tile) {
     #elif SORT_STAGE == 1
         shared uint partial[1024];
 
-        void main() {        
+        void main() {
+            if (TriCounter.captureFlag == 0u) return;
+
             uint tid = gl_LocalInvocationID.x;
             uint numTiles = sortNumTiles(TriCounter.quadCount);
             uint total = 256u * numTiles;
@@ -236,6 +243,8 @@ uint laneBase(in uint tile) {
         shared uint sgOff[SORT_MAX_SG * 256u];
 
         void main() {
+            if (TriCounter.captureFlag == 0u) return;
+
             uint n = TriCounter.quadCount;
             uint numTiles = sortNumTiles(n);
             uint tile = gl_WorkGroupID.x;
@@ -245,6 +254,7 @@ uint laneBase(in uint tile) {
             uint sg = gl_SubgroupID;
             uint numSg = gl_NumSubgroups;
             uint i0 = laneBase(tile);
+            if (numSg > SORT_MAX_SG) return;
 
             for (uint k = tid; k < numSg * 256u; k += SORT_THREADS) sgOff[k] = 0u;
             barrier();
@@ -252,7 +262,7 @@ uint laneBase(in uint tile) {
             for (uint r = 0u; r < SORT_ROUNDS; ++r) {
                 uint i = i0 + r * gl_SubgroupSize;
                 bool valid = i < n;
-                uint d = valid ? digitOf(srcKeys[i]) : 0u;
+                uint d = valid? digitOf(srcKeys[i]) : 0u;
 
                 uvec4 peers = peerMask(d, valid);
                 uint rank = popc4(peers & gl_SubgroupLtMask);
@@ -274,8 +284,8 @@ uint laneBase(in uint tile) {
             for (uint r = 0u; r < SORT_ROUNDS; ++r) {
                 uint i = i0 + r * gl_SubgroupSize;
                 bool valid = i < n;
-                uint key = valid ? srcKeys[i] : 0u;
-                uint val = valid ? srcVals[i] : 0u;
+                uint key = valid? srcKeys[i] : 0u;
+                uint val = valid? srcVals[i] : 0u;
                 uint d = digitOf(key);
 
                 uvec4 peers = peerMask(d, valid);

@@ -37,7 +37,7 @@ void main() {
     float var = 0.0;
     for (int y = -1; y <= 1; y++)
     for (int x = -1; x <= 1; x++) {
-        float k = (x == 0 ? 0.5 : 0.25) * (y == 0 ? 0.5 : 0.25);
+        float k = (x == 0? 0.5 : 0.25) * (y == 0? 0.5 : 0.25);
         var += k * texelFetch(colortex4, clamp(px + ivec2(x, y), ivec2(0), maxP), 0).a;
     }
     float sigmaL = SIGMA_L * sqrt(max(var, 0.0)) + 1e-4;
