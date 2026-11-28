@@ -69,6 +69,9 @@ bool traceScreenReflection(in vec3 P, in vec3 N, in vec3 R, in float jitter, in 
 #ifdef RTX_FEATURES
     vec3 shadeRTHit(in RTHit hit, in vec3 roW, in vec3 rdW, inout uint rngState) {
         RTSurface s = fetchSurface(hit, rdW);
+        #ifdef RTX_LIGHTING_DEBUG
+            return vec3(s.lm, 0);
+        #endif
 
         vec3 hitPosWorld = roW + rdW * hit.t;
         vec3 viewPos = (gbufferModelView * vec4(hitPosWorld, 1.0)).xyz;
@@ -84,8 +87,9 @@ bool traceScreenReflection(in vec3 P, in vec3 N, in vec3 R, in float jitter, in 
             mat = getMaterial(vec4(pow(1.0 - specular.r, 2.0), specular.g, 0.0, 1.0));
         }
 
+        vec3 Vview = normalize(mat3(gbufferModelView) * -rdW);
         vec4 reflWeight = vec4(0);
-        return getLighting(s.albedo, nView, viewPos, s.lm, mat, rngState, reflWeight);
+        return getLightingV(s.albedo, nView, viewPos, Vview, s.lm, mat, rngState, reflWeight);
     }
 #endif
 

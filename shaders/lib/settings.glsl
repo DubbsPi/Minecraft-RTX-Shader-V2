@@ -250,7 +250,7 @@ const float shadowDistance = MAX_DIST;
 const float shadowDistanceRenderMul = 1.0;
 
 const float RAY_EPSILON = 1e-6;
-
+const float RT_TIE_EPSILON = 1e-4;
 
 #define TRACE_WATER
 #define TRACE_ENTITIES
@@ -317,6 +317,7 @@ const float RAY_EPSILON = 1e-6;
 //#define VERTEX_HASH_DEBUG
 //#define DEBUG_RT_CULL
 //#define BVH_REUSE_DEBUG
+//#define RTX_LIGHTING_DEBUG
 
 #ifdef TRACE_WATER
 #endif

@@ -247,14 +247,18 @@ bool bvhTraverse(in vec3 ro, in vec3 rd, in float tMax, in int mode, out RTHit h
             vec3 v[4];
             getQuadPos(q, v);
             bool front = dot(cross(v[2] - v[0], v[3] - v[1]), rd) < 0.0;
+            float tieEps = RT_TIE_EPSILON + 2e-6 * hit.t;
 
             for (int tri = 0; tri < 2; ++tri) {
                 bool first = (tri == 0);
                 float t; vec2 bary;
+                float lim = found ? hit.t + tieEps : hit.t;
                 bool h;
-                if (first) h = intersectTriangle(buildRo, rd, v[0], v[1], v[2], hit.t, t, bary);
-                else       h = intersectTriangle(buildRo, rd, v[2], v[3], v[0], hit.t, t, bary);
+                if (first) h = intersectTriangle(buildRo, rd, v[0], v[1], v[2], lim, t, bary);
+                else h = intersectTriangle(buildRo, rd, v[2], v[3], v[0], lim, t, bary);
                 if (!h) continue;
+
+                if (found && mode != RT_MODE_SHADOW && abs(t - hit.t) <= tieEps && q <= hit.quad) continue;
 
                 vec3 tint;
                 uint kind = classifyHit(q, first, bary, front, mode != RT_MODE_OPAQUE, tint);

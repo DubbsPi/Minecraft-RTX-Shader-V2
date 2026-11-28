@@ -84,17 +84,17 @@ bool shadowMapSaysClear(in vec3 worldPos, in vec3 sunN, in float rawNdotL) {
 }
 
 
-vec3 getLighting(
-    in vec3 albedo, in vec3 N, in vec3 P,
+vec3 getLightingV(
+    in vec3 albedo, in vec3 N, in vec3 P, in vec3 V,
     in vec2 lightmap, in PBRMaterial mat,
     inout uint rngState,
     out vec4 reflectionWeight
  ) {
-    vec3 V = normalize(-P);
     vec3 L = normalize(shadowLightPosition);
     vec3 lightDirW = normalize(mat3(gbufferModelViewInverse) * L);
 
-    float NdotV = max(dot(N, V), 1e-4);
+    float NdotV = max(dot(N, V), 1e-3);
+    
     float rawNdotL = dot(N, L);
     float NdotL = max(rawNdotL, 0.0);
 
@@ -177,7 +177,7 @@ vec3 getLighting(
     // Ambient lighting
     vec3 ambientColor = mix( vec3(0.02, 0.03, 0.06), vec3(0.35, 0.45, 0.65), day);
     vec3 envBRDF = envBRDFApprox(F0, mat.roughness, NdotV);
-    vec3 ambientDiffuse = albedo * (1.0 - mat.metallic) * (vec3(1.0) - envBRDF) * ambientColor * skyLight;
+    vec3 ambientDiffuse = albedo * (1.0 - mat.metallic) * max(vec3(1) - envBRDF, vec3(0)) * ambientColor * skyLight;
 
     // Block lighting
     vec3 blockLightColor = vec3(1, 0.6, 0.3);
@@ -202,6 +202,16 @@ vec3 getLighting(
     #endif
 
     return color;
+}
+
+
+vec3 getLighting(
+    in vec3 albedo, in vec3 N, in vec3 P,
+    in vec2 lightmap, in PBRMaterial mat,
+    inout uint rngState,
+    out vec4 reflectionWeight
+ ) {
+    return getLightingV(albedo, N, P, normalize(-P), lightmap, mat, rngState, reflectionWeight);
 }
 
 
